@@ -186,13 +186,10 @@ class SQL_Param(SQL, SQL_ParamMixin):
 
         ####
         if len(named_join_queries) > 0:
-            print("Named query")
             if use_join_map:
-                print("Using join map")
                 join_statements = [self._join_statement_from_template_and_map(q_name, q, join_keys=self.join_keys)
                                    for q_name, q in named_join_queries.items()]
             elif use_join_clause:
-                print("Using join CLAUSE")
                 join_statements = [self._join_statement_from_param_clause(q_name, q)
                                     for q_name, q in named_join_queries.items()]
             else:
