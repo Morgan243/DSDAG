@@ -28,11 +28,12 @@ class OpMeta(type):
         else:
             _cls = cls.existing[_cls]
 
-        cnt = sum(1 if c.__name__ == _cls.__name__ else 0 for c in cls.existing.keys())
+        cnt = sum(1 if c.__name__ == _cls.__name__ else 0
+                  for c in cls.existing.keys())
         if cnt > 1:
-            _cls.unique_name = "%s%d" % (str(_cls.__name__), cnt - 1)
+            _cls.unique_cls_name = "%s%d" % (str(_cls.__name__), cnt - 1)
         else:
-            _cls.unique_name = str(_cls.__name__)
+            _cls.unique_cls_name = str(_cls.__name__)
 
         return _cls
 
@@ -54,6 +55,7 @@ class OpVertex(object):
         self._dag = None
         self._user_kwargs = kwargs
         self._parameters = self.scan_for_op_parameters(overrides=self._user_kwargs)
+        self._name = kwargs.get('name', None)
         for p_n, p, in self._parameters.items():
             setattr(self, p_n, p.value)
         self.__update_doc_str()
@@ -61,7 +63,8 @@ class OpVertex(object):
         self._cacheable = not self._never_cache
 
     def __update_doc_str(self):
-        docs = self.__class__.__name__
+        #docs = self.__class__.__name__
+        docs = self.unique_cls_name
         docs += '\n'
 
         docs += "\n".join("%s : %s" % (k, str(param.help_msg))
@@ -75,7 +78,10 @@ class OpVertex(object):
         params = self.get_parameters()
         repr = ", ".join("%s=%s" % (str(k), str(params[k]))
                         for k in sorted(params.keys()))
+        if self._name is not None:
+            repr += ', name=\'' + self._name + '\''
         return self.__class__.__name__ + "(" + repr + ")"
+        #return self._name + "(" + repr + ")"
 
     def __hash__(self):
         #return hash((self.requirements, self.__parameters))
@@ -127,6 +133,19 @@ class OpVertex(object):
 
     def get_logger(self):
         return self._dag.logger
+
+    def get_name(self):
+        return self._name if self._name is not None else self.unique_cls_name
+
+    def _node_color(self):
+        return 'lightblue2'
+
+    def _node_style(self):
+        return 'filled'
+
+    def _get_viz_attrs(self):
+        return dict(color=self._node_color(), #getattr(self, 'color', 'lightblue2'),
+                    style=self._node_style())#getattr(self, 'style', 'filled'))
 
     def set_cacheable(self, is_cacheable):
         self._cacheable = is_cacheable
@@ -190,6 +209,8 @@ class OpVertex(object):
         for o_n in dir(cls):
             o = getattr(cls, o_n)
             if isinstance(o, BaseParameter) or issubclass(type(o), BaseParameter):
+                if o_n in BaseParameter._reserved_kw:
+                    raise ValueError("Parameter cannot use reserved keyword '%s'" % o_n)
                 params[o_n] = copy.copy(o)
 
                 if o_n in overrides:
@@ -216,7 +237,7 @@ class OpVertex(object):
         def closure(self):
             return req_ret
         # Define new Op class that has correct requires
-        new_class = OpMeta(self.unique_name, (type(self),),
+        new_class = OpMeta(self.unique_cls_name, (type(self),),
                            {'requires':closure})
 
         return new_class(**self._user_kwargs)

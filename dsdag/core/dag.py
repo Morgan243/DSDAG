@@ -53,7 +53,7 @@ class DAG(object):
         self.pbar = pbar
 
         self.all_ops, self.dep_map = self.build(self.required_outputs)
-        self.name_to_op_map = {o.unique_name:o for o in self.all_ops.values()}
+        self.name_to_op_map = {o.unique_cls_name:o for o in self.all_ops.values()}
 
         self.dep_sets = {p:set(d.values()) if isinstance(d, dict) else set(d)
                          for p, d in self.dep_map.items()}
@@ -90,10 +90,11 @@ class DAG(object):
             for j, process in enumerate(ind_processes):
                 if self.live_browse and len(self.outputs) > 0:
                     self.browse()
-                process_name = process.__class__.__name__
+                process_cls_name = process.__class__.__name__
+                process_friendly_name = process.get_name()
                 process_repr = repr(process)
                 if self.pbar:
-                    self.tqdm_bar.set_description(process.unique_name)
+                    self.tqdm_bar.set_description(process.unique_cls_name)
 
                 dependencies = self.dep_map.get(process, dict())
                 dep_values = dependencies.values() if isinstance(dependencies, dict) else dependencies
@@ -104,17 +105,17 @@ class DAG(object):
                                    and process._cacheable
                                    and not any(p.__class__.__name__ in computed for p in dep_values)
                                    and self.read_from_cache
-                                   and process_name in self.cache)
+                                   and process_cls_name in self.cache)
                 if load_from_cache:
                     self.logger.info("%s Will use cached output of %s"
-                                     % (tpid, process_name))
-                    self.outputs[process] = self.cache[process_name]
+                                     % (tpid, process_cls_name))
+                    self.outputs[process] = self.cache[process_cls_name]
                 else:
                     kwargs = dict()
                     if isinstance(dependencies, dict):
                         for k, v in dependencies.items():
                             if v not in self.outputs:
-                                msg = "The process %s has a missing dependency:" % process_name
+                                msg = "The process %s has a missing dependency:" % process_cls_name
                                 msg += "%s=%s" % (k, v.__class__.__name__)
                                 self.logger.error(msg=msg)
                                 return -1
@@ -122,7 +123,7 @@ class DAG(object):
                                 self.outputs[v] = self.outputs[v].load()
                             kwargs[k] = self.outputs[v]
 
-                        computed.add(process_name)
+                        computed.add(process_cls_name)
                         self.exec_process(process=process,
                                           proc_exec_kwargs=kwargs,
                                           tpid=tpid)
@@ -130,7 +131,7 @@ class DAG(object):
                         proc_args = list()
                         for i, v in enumerate(dependencies):
                             if v not in self.outputs:
-                                msg = "The process %s has a missing dependency:" % process_name
+                                msg = "The process %s has a missing dependency:" % process_cls_name
                                 msg += "%s=%s" % (k, v.__class__.__name__)
                                 self.logger.error(msg=msg)
                                 return -1
@@ -139,7 +140,7 @@ class DAG(object):
                             #kwargs[k] = self.outputs[v]
                             proc_args.append(self.outputs[v])
 
-                        computed.add(process_name)
+                        computed.add(process_cls_name)
                         self.exec_process(process=process,
                                           proc_args=proc_args,
                                           #proc_exec_kwargs=kwargs,
@@ -172,7 +173,7 @@ class DAG(object):
                 if self.write_to_cache and not load_from_cache:
                     self.logger.info("Persisting chassis.outputs")
                     self.cache.save(self.outputs[process],
-                                        name=process_name,
+                                        name=process_cls_name,
                                         author='claim_impact_chassis',
                                         param_names=list(kwargs.keys()),
                                         auto_overwrite=True)
@@ -272,32 +273,34 @@ class DAG(object):
 
     def viz(self, fontsize='10',
             color_mapping=None,
-            format='png'):
+            #format='png',
+            friendly_names=True,
+            rankdir='UD',
+            return_dot_object=False):
         from graphviz import Digraph
+        import tempfile
 
         merged = self.dep_map
 
-        dot = Digraph(comment='chassis viz', format=format,
+        dot = Digraph(comment='chassis viz', format='png',
+                      graph_attr=dict(rankdir=rankdir),
                       node_attr={'fontsize': fontsize})
         dot.node_attr.update(color='lightblue2', style='filled')
 
         def _get_name(m):
-            return m.unique_name
+            if friendly_names:
+                return m.get_name()
+            else:
+                return m.unique_cls_name
 
         for m, deps in merged.items():
             n = _get_name(m)
 
+            node_attrs = m._get_viz_attrs()
             if color_mapping is not None and n in color_mapping:
-                c = color_mapping[n]
-            elif 'queryprovider' in n.lower():
-                c = '#85c669'
-            elif 'claim' in n.lower():
-                c = '#db3b18'
-            elif 'client' in n.lower() or 'cloas' in n.lower():
-                c = '#4286f4'
-            else:
-                c = '#d6d6d6'
-            dot.node(n, color=c)
+                node_attrs['color'] = color_mapping[n]
+
+            dot.node(n, **node_attrs)
 
         for m, deps in merged.items():
             n = _get_name(m)
@@ -306,7 +309,14 @@ class DAG(object):
                 dn = _get_name(d)
                 dot.edge(dn, n)
 
-        return dot
+        if return_dot_object:
+            return dot
+        else:
+            from IPython.display import Image, display
+            img_name = dot.render(cleanup=True,
+                                  directory=tempfile.gettempdir())
+
+            display(Image(filename=img_name))
 
     def browse(self, show_dag=True):
         import ipywidgets as widgets
@@ -328,9 +338,9 @@ class DAG(object):
                     viz_out = FrameBrowseMaixin.build_df_browse_widget(self.outputs[op])
                 else:
                     viz_out = widgets.Output()
-                    viz_out.append_display_data("Op %s has no viz method" % op.unique_name)
+                    viz_out.append_display_data("Op %s has no viz method" % op.unique_cls_name)
             tab_child_widgets.append(viz_out)
-            tab_titles.append(op.unique_name)
+            tab_titles.append(op.unique_cls_name)
 
         tab = widgets.Tab(layout=widgets.Layout(width='900px'))
         #tab = widgets.Accordion(layout=widgets.Layout(width='1000px'))

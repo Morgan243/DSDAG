@@ -5,6 +5,7 @@ class _UnsetParameter(object):
     pass
 
 class BaseParameter(object):
+    _reserved_kw = ('name',)
     def __init__(self, default=_UnsetParameter,
                  help_msg=None):
         self.is_unset = True
@@ -48,8 +49,8 @@ class BaseParameter(object):
 
 class UnhashableParameter(BaseParameter):
     unhashable_value_id = 0
-    def __init__(self, **kwargs):
-        super(UnhashableParameter, self).__init__(**kwargs)
+    def __init__(self, *args, **kwargs):
+        super(UnhashableParameter, self).__init__(*args, **kwargs)
 
     def set_value(self, v):
         super(UnhashableParameter, self).set_value(v)

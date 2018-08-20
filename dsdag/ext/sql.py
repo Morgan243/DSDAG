@@ -59,6 +59,9 @@ class SQL(OpVertex):
 
         return highlight_sql(q)
 
+    def _node_color(self):
+        return '#59ba5e'
+
     def op_nb_viz(self, op_out, viz_out=None):
         from pygments import highlight
         from pygments.lexers import SqlLexer
@@ -85,10 +88,10 @@ class SQL(OpVertex):
 
 
 class SQL_WrapAs(OpVertex):
-    name = BaseParameter(None, help_msg="Wrap the sql query in () as <name>")
+    alias = BaseParameter(None, help_msg="Wrap the sql query in () as <alias>")
 
     def run(self, q):
-        return "(%s) AS %s" % (q, self.name)
+        return "(%s) AS %s" % (q, self.alias)
 
     def op_nb_viz(self, op_out, viz_out=None):
         from IPython.display import HTML
@@ -110,10 +113,10 @@ class SQL_ParamMixin():
                                  help_msg="(Optional) SQL filter to be appended to the WHERE clause")
     groupby_clause = BaseParameter(None,
                                  help_msg="(Optional) SQL filter to be appended to the WHERE clause")
-    #join_ops = BaseParameter(None,
-    #                         "Pass a SQL Op or mapping of SQL Ops to be joined. These will"
-    #                         "specified as requirements by this OP and will be passed as named_joined_queries"
-    #                         "at runtime.")
+    join_ops = BaseParameter(None,
+                             "Pass a SQL Op or mapping of SQL Ops to be joined. These will"
+                             "specified as requirements by this OP and will be passed as named_joined_queries"
+                             "at runtime.")
     join_keys = BaseParameter(None)
     _join_template = """
     JOIN
@@ -139,7 +142,7 @@ class SQL_Param(SQL, SQL_ParamMixin):
         if self.join_ops is None:
             return dict()
         elif isinstance(self.join_ops, dict):
-            if not all(isinstance(o, SQL) for o in self.join_ops.values()):
+            if not all(isinstance(o, (SQL, SQL_WrapAs)) for o in self.join_ops.values()):
                 raise ValueError("All join ops must be SQL derived")
             return self.join_ops
         elif issubclass(self.join_ops, (OpVertex, SQL)):
@@ -236,7 +239,7 @@ class SQL_CountSamples(SQL):
 
 class SQL_RandomSample(SQL):
     q = """select * from ({subq}) as {name} where random() < {rate} {where_addon}"""
-    name = BaseParameter("sq", help_msg="Alias for sub query")
+    alias = BaseParameter("sq", help_msg="Alias for sub query")
     rate = BaseParameter(.1)
     where_addon = BaseParameter(None)
     limit = BaseParameter(None)
@@ -289,10 +292,16 @@ class SQL_SelectLiterals(SQL):
 class SQL_SelectFromDataFrame(SQL):
     q = """(VALUES {value_tuples}) as {subq_name} ({field_names})"""
     #df = BaseParameter(help_msg="DataFrame to be selecte from - column names will be the field name")
-    df = UnhashableParameter(help_msg="DataFrame to be selecte from - column names will be the field name")
+    #df = UnhashableParameter(help_msg="DataFrame to be selecte from - column names will be the field name")
     subq_name = BaseParameter(None, help_msg="(Optional) Alias for the resulting table selection")
 
-    def run(self):
+    def run(self, *args, **kwargs):
+        all_params = list(args) + list(kwargs.values())
+        if len(all_params) != 1:
+            raise ValueError("%s expects only one input, but %d given" % (str(self), len(all_params)))
+        else:
+            self.df = all_params[0]
+
         fn_map = {i:fn for i, fn in enumerate(self.df.columns)}
 
         quote_fields = self.df.columns[self.df.dtypes == 'object'].values

@@ -13,6 +13,9 @@ class BaseDataProvider(OpVertex):
     system_map = dict(greenplum=gd.greenplum,
                       oracle=gd.oracle)
 
+    def _node_color(self):
+        return '#eded5c'
+
     def requires(self):
         raise NotImplementedError("Incomplete Base DataProvider class - implement requires")
 

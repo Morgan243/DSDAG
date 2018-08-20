@@ -63,6 +63,16 @@ class TestDSDAGBuild(unittest.TestCase):
         print("--OUTPUT--")
         print(t)
 
+    def test_op_naming(self):
+        add_op11 = AddOp(magic_num=11, name='Magic_11_AddOpp')
+        add_op3 = AddOp(magic_num=3, name='Magic_3_AddOpp')
+
+        add_op = AddOp(name='Agg')(x=add_op11, y=add_op3)
+
+        dag = add_op.build()
+        res = dag()
+        print(res)
+
     def test_with_requires(self):
         ## Basic Correctness
         for mx, my in [(1, 2), (5, 9), (10, 35)]:
