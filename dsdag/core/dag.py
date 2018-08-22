@@ -53,7 +53,7 @@ class DAG(object):
         self.pbar = pbar
 
         self.all_ops, self.dep_map = self.build(self.required_outputs)
-        self.name_to_op_map = {o.unique_cls_name:o for o in self.all_ops.values()}
+        self.name_to_op_map = {o.get_name():o for o in self.all_ops.values()}
 
         self.dep_sets = {p:set(d.values()) if isinstance(d, dict) else set(d)
                          for p, d in self.dep_map.items()}
@@ -69,13 +69,92 @@ class DAG(object):
     def __getitem__(self, item):
         return self.name_to_op_map[item]
 
-    def with_op(self, **kwargs):
-        # TODO: replace
-        pass
+    def build(self, required_outputs):
+        if not isinstance(required_outputs, list):
+            msg = "DAG's build method only accepts a list of outputs"
+            raise ValueError(msg)
 
-    def run_dag_new(self):
-        for i, o in enumerate(self.all_requirements):
-            o_reqs = self.dep_map[o]
+        deps_to_resolve = required_outputs
+        dep_map = dict()
+        all_ops = dict()
+        # Iterate rather than recurse
+        # deps_to_resolve treated like a FIFO queue
+        while len(deps_to_resolve) > 0:
+            # Pop a dep
+            o = deps_to_resolve[0]
+            deps_to_resolve = deps_to_resolve[1:]
+            #####-----
+            if any(o == _o for _o in all_ops):
+                continue
+
+            o._set_dag(self)
+            all_ops[o] = o
+            dep_map[o] = o.requires()
+
+            # requires can return a map (for kwargs) or a list (for args)
+            if isinstance(dep_map[o], list):
+                deps_to_resolve += list(dep_map[o])
+            elif isinstance(dep_map[o], dict):
+                deps_to_resolve += list(dep_map[o].values())
+            else:
+                raise ValueError("requires must return a list or dict")
+
+            # With every new Op, we want to check that this Op isn't
+            # already being satisfied.
+
+            # Go through all ops that have been processed at this point
+            for o in all_ops.keys():
+                if isinstance(dep_map[o], dict):
+                    #For this operations dependencies (dict)
+                    for req_k in dep_map[o].keys():
+                        # If this is already satisified
+                        if dep_map[o][req_k] in all_ops:
+                            # Take the existing (resolved) op and overwrite
+                            # this ops dependency to it
+                            # However, the key object is not overwritten - so explicitly delete and update
+                            # TODO: Is this still necessary?
+                            _o = all_ops[dep_map[o][req_k]]
+                            del(all_ops[_o])
+                            dep_map[o][req_k] = _o
+                            all_ops[_o] = _o
+                elif isinstance(dep_map[o], list):
+                    #For this operations dependencies (list)
+                    for i, req_k in enumerate(dep_map[o]):
+                        if req_k in all_ops:
+                            _o = all_ops[dep_map[o][i]]
+                            dep_map[o][i] = _o
+                            del all_ops[_o]
+                            all_ops[_o] = _o
+
+                else:
+                    msg = "Found unsupported Op dependency object %s" % type(o)
+                    raise ValueError(msg)
+
+        return all_ops, dep_map
+
+    def exec_process(self, process,
+                     tpid,
+                     proc_exec_kwargs=None,
+                     proc_args=None):
+        p = process
+
+        self.logger.info("%s Executing %s" % (tpid, process.__class__.__name__))
+        start_t = time.time()
+        if proc_exec_kwargs is None and proc_args is None:
+            self.outputs[process] = p.run()
+        elif proc_exec_kwargs is not None and proc_args is None:
+            self.outputs[process] = p.run(**proc_exec_kwargs)
+        elif proc_exec_kwargs is None and proc_args is not None:
+            self.outputs[process] = p.run(*proc_args)
+        elif proc_exec_kwargs is not None and proc_args is not None:
+            self.outputs[process] = p.run(*proc_args, **proc_exec_kwargs)
+
+        finish_t = time.time()
+        self.start_and_finish_times[process] = (start_t, finish_t)
+
+        self.logger.info("%s %s completed in %.2fs" % (tpid,
+                                                       process.__class__.__name__,
+                                                       finish_t - start_t))
 
     def run_dag(self):
         computed = set()
@@ -198,78 +277,6 @@ class DAG(object):
         else:
             return o
 
-    def build(self, required_outputs):
-        if not isinstance(required_outputs, list):
-            msg = "DAG's build method only accepts a list of outputs"
-            raise ValueError(msg)
-
-        deps_to_resolve = required_outputs
-        dep_map = dict()
-        all_ops = dict()
-        # Iterate rather than recurse
-        # deps_to_resolve treated like a FIFO queue
-        while len(deps_to_resolve) > 0:
-            # Pop a dep
-            o = deps_to_resolve[0]
-            deps_to_resolve = deps_to_resolve[1:]
-            #####-----
-            o._set_dag(self)
-            all_ops[o] = o
-            dep_map[o] = o.requires()
-
-            # requires can return a map (for kwargs) or a list (for args)
-            if isinstance(dep_map[o], list):
-                deps_to_resolve += list(dep_map[o])
-            elif isinstance(dep_map[o], dict):
-                deps_to_resolve += list(dep_map[o].values())
-            else:
-                raise ValueError("requires must return a list or dict")
-
-            # With every new Op, we want to check that this Op isn't
-            # already being satisfied.
-
-            # Go through all ops that have been processed at this point
-            for o in all_ops.keys():
-                if isinstance(dep_map[o], dict):
-                    #For this operations dependencies (dict)
-                    for req_k in dep_map[o].keys():
-                        # If this is already satisified, use that object
-                        if dep_map[o][req_k] in all_ops:
-                            dep_map[o][req_k] = all_ops[dep_map[o][req_k]]
-                elif isinstance(dep_map[o], list):
-                    #For this operations dependencies (list)
-                    for i, req_k in enumerate(dep_map[o]):
-                        if req_k in all_ops:
-                            dep_map[o][i] = all_ops[dep_map[o][i]]
-                else:
-                    msg = "Found unsupported Op dependency object %s" % type(o)
-                    raise ValueError(msg)
-
-        return all_ops, dep_map
-
-    def exec_process(self, process,
-                     tpid,
-                     proc_exec_kwargs=None,
-                     proc_args=None):
-        p = process
-
-        self.logger.info("%s Executing %s" % (tpid, process.__class__.__name__))
-        start_t = time.time()
-        if proc_exec_kwargs is None and proc_args is None:
-            self.outputs[process] = p.run()
-        elif proc_exec_kwargs is not None and proc_args is None:
-            self.outputs[process] = p.run(**proc_exec_kwargs)
-        elif proc_exec_kwargs is None and proc_args is not None:
-            self.outputs[process] = p.run(*proc_args)
-        elif proc_exec_kwargs is not None and proc_args is not None:
-            self.outputs[process] = p.run(*proc_args, **proc_exec_kwargs)
-
-        finish_t = time.time()
-        self.start_and_finish_times[process] = (start_t, finish_t)
-
-        self.logger.info("%s %s completed in %.2fs" % (tpid,
-                                                   process.__class__.__name__,
-                                                   finish_t - start_t))
 
     def viz(self, fontsize='10',
             color_mapping=None,

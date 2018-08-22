@@ -1,6 +1,8 @@
 import abc
 from toposort import toposort
 import copy
+import uuid
+import types
 import interactive_data_tree as idt
 import time
 import logging
@@ -11,8 +13,14 @@ from parameter import BaseParameter, UnhashableParameter
 class OpMeta(type):
     existing = dict()
     def __new__(cls, name, parents, dct):
+        # Both brand new Ops and derived ones will enter this method
         _cls =  super(OpMeta, cls).__new__(cls, name, parents, dct)
 
+        # If the Op exists, but is applied differently (differing parameters or inptus)
+        #   - Lineage ID must persist through
+        # Op is brand new
+        #   - Needs a new lineage id
+        # Could this be replaced with 'issubclass'
         if _cls not in cls.existing:
             docs = name
             docs += '\n\n'
@@ -25,10 +33,14 @@ class OpMeta(type):
 
             _cls.__doc__ = docs
             cls.existing[_cls] = _cls
+
+            if not hasattr(_cls, '_op_lineage_id') or _cls._op_lineage_id is None:
+                _cls._op_lineage_id = str(uuid.uuid4())
+            #_cls._op_lineage_id = str(uuid.uuid4())
         else:
             _cls = cls.existing[_cls]
 
-        cnt = sum(1 if c.__name__ == _cls.__name__ else 0
+        cnt = sum(c.__name__ == _cls.__name__
                   for c in cls.existing.keys())
         if cnt > 1:
             _cls.unique_cls_name = "%s%d" % (str(_cls.__name__), cnt - 1)
@@ -37,12 +49,11 @@ class OpMeta(type):
 
         return _cls
 
-class OpVertex(object):
-    __metaclass__ = OpMeta
-    _never_cache = False
 
-    # Map types + parameters to instances - don't duplicate
-    existing_ops = dict()
+class OpVertex(object):
+    _never_cache = False
+    _instance_id_map = dict()
+    _closure_map = dict()
     def __init__(self, **kwargs):
         # For parameters:
         #   (1) An attribute stores the full (Base)Parameter Instance
@@ -51,11 +62,21 @@ class OpVertex(object):
 
         # Filled out during build call
         self._built = False
-        self._requirements = dict()
+        self.req_hash = None
+
         self._dag = None
         self._user_kwargs = kwargs
         self._parameters = self.scan_for_op_parameters(overrides=self._user_kwargs)
         self._name = kwargs.get('name', None)
+
+        self.unique_cls_name = str(self.__class__.__name__)
+        iid = self.__class__._instance_id_map.get(self.unique_cls_name)
+        if iid is not None:
+            self.__class__._instance_id_map[self.unique_cls_name] += 1
+            self.unique_cls_name += '_%s' % str(iid)
+        else:
+            self.__class__._instance_id_map[self.unique_cls_name] = 1
+
         for p_n, p, in self._parameters.items():
             setattr(self, p_n, p.value)
         self.__update_doc_str()
@@ -84,22 +105,38 @@ class OpVertex(object):
         #return self._name + "(" + repr + ")"
 
     def __hash__(self):
-        #return hash((self.requirements, self.__parameters))
-        p_tuples = tuple([(k, repr(v)) for k, v in self._parameters.items()])
-        r_tuples = tuple([(k, repr(v)) for k, v in self._requirements.items()])
-        return hash((type(self), p_tuples, r_tuples))
+        p_tuples = tuple([(k, repr(self._parameters[k]))
+                          for k in sorted(self._parameters.keys())])
+        #r_tuples = tuple([(k, repr(self._requirements[k]))
+        #                  for k in sorted(self._requirements.keys())])
+        if self.req_hash is not None:
+            r = self.req_hash
+        else:
+            r = self.requires.__func__
+
+        return hash((type(self), p_tuples, r))
+        #return hash((self.unique_cls_name, p_tuples, r_tuples))
 
     def req_match(self, other):
-        for req_name, req_o in self._requirements.items():
-            for other_req_name, other_req_o in other.requirements.items():
-                if (req_name != other_req_name) or (req_o != other_req_o):
-                    return False
-        return True
+        return self.requires.__func__ == other.requires.__func__
 
-    def __eq__(self, other):
-        if not isinstance(other, OpVertex) and not issubclass(type(other), OpVertex):
+    def old_req_match(self, other):
+        self_reqs = self._dag.dep_map[self]
+        other_reqs = self._dag.dep_map[other]
+
+        if len(self_reqs) != len(other_reqs):
             return False
 
+        for req_name, req_o in self_reqs.items():
+            if req_name not in other_reqs:
+                return False
+
+            if req_o != other_reqs[req_name]:
+                return False
+
+        return True
+
+    def param_match(self, other):
         self_params = self.get_parameters()
         other_params = other.get_parameters()
 
@@ -113,10 +150,22 @@ class OpVertex(object):
             if not(p_v == other_params[p_k]):
                 return False
 
+        return True
+
+    def __hash__eq__(self, other):
+        return hash(self) == hash(other)
+
+    def __eq__(self, other):
+        if not isinstance(other, OpVertex) and not issubclass(type(other), OpVertex):
+            return False
+
+        if not self.param_match(other):
+            return False
+
         if not self.req_match(other):
             return False
 
-        if type(self) != type(other):
+        if not isinstance(self, type(other)):# and not issubclass(type(self), type(other)):
             return False
 
         return True
@@ -143,9 +192,13 @@ class OpVertex(object):
     def _node_style(self):
         return 'filled'
 
+    def _node_shape(self):
+        return 'oval'
+
     def _get_viz_attrs(self):
-        return dict(color=self._node_color(), #getattr(self, 'color', 'lightblue2'),
-                    style=self._node_style())#getattr(self, 'style', 'filled'))
+        return dict(color=self._node_color(),
+                    style=self._node_style(),
+                    shape=self._node_shape())
 
     def set_cacheable(self, is_cacheable):
         self._cacheable = is_cacheable
@@ -217,7 +270,7 @@ class OpVertex(object):
                     params[o_n].set_value(overrides[o_n])
         return params
 
-    def with_requires(self, *args, **kwargs):
+    def with_requires_old(self, *args, **kwargs):
         if len(kwargs) == 0 and len(args) == 0:
             return self
         elif len(kwargs) != 0:
@@ -238,9 +291,45 @@ class OpVertex(object):
             return req_ret
         # Define new Op class that has correct requires
         new_class = OpMeta(self.unique_cls_name, (type(self),),
-                           {'requires':closure})
+                           {'requires':closure,
+                            '_op_lineage_id': self._instance_id})
 
         return new_class(**self._user_kwargs)
+
+    def with_requires(self, *args, **kwargs):
+        if len(kwargs) == 0 and len(args) == 0:
+            return self
+        elif len(kwargs) != 0:
+            from dsdag.ext.misc import VarOp
+            req_ret = kwargs
+            req_hash = hash(tuple((k, v if isinstance(v, OpVertex) or issubclass(v.__class__, OpVertex) else VarOp(obj=v))
+                        for k, v in kwargs.items()))
+            #req_hash = hash(tuple(req_ret))
+        elif len(args) != 0:
+            from dsdag.ext.misc import VarOp
+            # not supports *args just yet
+            req_ret = list(args)
+            req_ret = [a if isinstance(a, OpVertex) or issubclass(a.__class__, OpVertex)
+                       else VarOp(obj=a)
+                       for a in req_ret]
+            req_hash = hash(tuple(req_ret))
+
+        else:
+            msg = "Mix of *args and **kwargs not supported (yet?)"
+            raise ValueError(msg)
+
+
+        if req_hash not in self.__class__._closure_map:
+            def closure(self):
+                return req_ret
+            self.__class__._closure_map[req_hash] = closure
+
+        # Use descriptor protocol: https://docs.python.org/2/howto/descriptor.html
+        #self.requires = closure.__get__(self)
+        self.req_hash = req_hash
+        self.requires = self.__class__._closure_map[self.req_hash].__get__(self)
+
+        return self
 
     @classmethod
     def with_params(cls, op_name=None, **kwargs):

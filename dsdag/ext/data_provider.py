@@ -16,6 +16,9 @@ class BaseDataProvider(OpVertex):
     def _node_color(self):
         return '#eded5c'
 
+    def _node_shape(self):
+        return 'cylinder'
+
     def requires(self):
         raise NotImplementedError("Incomplete Base DataProvider class - implement requires")
 

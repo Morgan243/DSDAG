@@ -4,6 +4,7 @@ from pprint import pprint
 
 OpVertex = dsdag.core.op.OpVertex
 BaseParameter = dsdag.core.parameter.BaseParameter
+UnhashableParameter = dsdag.core.parameter.UnhashableParameter
 df_templates = dsdag.ext.pandas
 DAG = dsdag.core.dag.DAG
 LambdaOp = dsdag.ext.misc.LambdaOp
@@ -142,8 +143,25 @@ class TestDSDAGBuild(unittest.TestCase):
         f = lambda x: x + 1
         o1 = LambdaOp(f=f, name='main_lambda')(var)
         o2 = LambdaOp(f=f, name='main_lambda')(var)
-        self.assertEqual(o1._op_lineage_id, o2._op_lineage_id)
+        o3 = LambdaOp(f=f, name='main_lambda')(var)
+
+        o4 = LambdaOp(f=sum)(o1, o2, o3)
+        dag = o4.build()
         self.assertEqual(o1, o2, msg='Identical lambda ops not considered the same!')
+        self.assertEqual(o2, o3, msg='Identical lambda ops not considered the same!')
+
+        key_names = [o.unique_cls_name for o in dag.dep_map.keys()]
+
+        detail_dep_is_in_map = {o.unique_cls_name: {d.unique_cls_name:d.unique_cls_name in key_names for d in deps}
+                         for o, deps in dag.dep_map.items()}
+
+        dep_is_in_map = {_name: all(dep_dict.values())
+                    for _name, dep_dict in detail_dep_is_in_map.items()}
+
+        self.assertTrue(all(dep_is_in_map.values()))
+
+    def test_duplicate_op_name(self):
+        pass
 
     def test_dataframe_template(self):
         import pandas as pd
@@ -153,7 +171,7 @@ class TestDSDAGBuild(unittest.TestCase):
                                  b=range(33, 43)))
 
         class ProvideDF(OpVertex):
-            df = BaseParameter()
+            df = UnhashableParameter()
             def run(self):
                 return self.df
 
@@ -165,10 +183,10 @@ class TestDSDAGBuild(unittest.TestCase):
         print(merge_df)
 
     def test_dag_op_getter(self):
-        op = AddOp(magic_num=11)
+        op = AddOp(magic_num=11, name='important_op')
         dag = op.build()
 
-        self.assertEqual(op, dag['AddOp'])
+        self.assertEqual(op, dag['important_op'])
 
     def test_caching(self):
         pass
