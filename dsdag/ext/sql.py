@@ -103,6 +103,9 @@ class SQL_WrapAs(OpVertex):
         viz_out.append_display_data(HTML(html))
         return viz_out
 
+    def _node_color(self):
+        return '#59ba5e'
+
 class SQL_ParamMixin():
     select_clause = BaseParameter(None,
                                 help_msg="(Optional) Select statement to include after SELECT, but before FROM ")
@@ -298,7 +301,9 @@ class SQL_SelectFromDataFrame(SQL):
     def run(self, *args, **kwargs):
         all_params = list(args) + list(kwargs.values())
         if len(all_params) != 1:
-            raise ValueError("%s expects only one input, but %d given" % (str(self), len(all_params)))
+            msg = ("%s expects only one input, but %d given (reminder: dataframe is not a c-tor param)"
+                   % (str(self), len(all_params)))
+            raise ValueError(msg)
         else:
             self.df = all_params[0]
 
