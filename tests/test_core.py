@@ -6,6 +6,8 @@ OpVertex = dsdag.core.op.OpVertex
 BaseParameter = dsdag.core.parameter.BaseParameter
 df_templates = dsdag.ext.pandas
 DAG = dsdag.core.dag.DAG
+LambdaOp = dsdag.ext.misc.LambdaOp
+VarOp = dsdag.ext.misc.VarOp
 
 class Bar(OpVertex):
     def requires(self):
@@ -134,6 +136,14 @@ class TestDSDAGBuild(unittest.TestCase):
         self.assertEqual(r, [25, 11])
 
         print(r)
+
+    def test_deduplicating_operations(self):
+        var = VarOp(obj=5, name='int_5')
+        f = lambda x: x + 1
+        o1 = LambdaOp(f=f, name='main_lambda')(var)
+        o2 = LambdaOp(f=f, name='main_lambda')(var)
+        self.assertEqual(o1._op_lineage_id, o2._op_lineage_id)
+        self.assertEqual(o1, o2, msg='Identical lambda ops not considered the same!')
 
     def test_dataframe_template(self):
         import pandas as pd
