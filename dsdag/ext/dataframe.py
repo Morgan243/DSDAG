@@ -2,8 +2,19 @@ from dsdag.core.parameter import BaseParameter
 from dsdag.core.op import OpVertex
 
 class Merge(OpVertex):
-    key = BaseParameter()
+    #key = BaseParameter()
     how = BaseParameter('inner')
+
+    on = BaseParameter(None)
+    left_on = BaseParameter(None)
+    right_on = BaseParameter(None)
+    left_index = BaseParameter(False)
+    right_index = BaseParameter(False)
+    sort = BaseParameter(False)
+    suffixes = BaseParameter(('_x', '_y'))
+    copy = BaseParameter(True)
+    indicator = BaseParameter(False)
+    validate = BaseParameter(None)
 
     def requires(self):
         raise NotImplementedError()
@@ -13,11 +24,47 @@ class Merge(OpVertex):
         frames = list(args)
         merged = frames[0]
         for f in frames[1:]:
-            merged = merged.merge(f, on=self.key,
-                                  how=self.how)
+            merged = merged.merge(f, on=self.on, how=self.how,
+                                  left_on=self.left_on, right_on=self.right_on,
+                                  left_index=self.left_index, right_index=self.right_index,
+                                  sort=self.sort, suffixes=self.suffixes, copy=self.copy,
+                                  indicator=self.indicator, validate=self.validate)
 
         return merged
 
+class RenameColumns(OpVertex):
+    columns = BaseParameter(None)
+    copy = BaseParameter(True)
+    inplace = BaseParameter(False)
+    level = BaseParameter(None)
+
+    def run(self, df):
+        return  df.rename(columns=self.columns, copy=self.copy,
+                          inplace=self.inplace, level=self.level)
+
+class DropDuplicates(OpVertex):
+    subset = BaseParameter(None)
+    keep = BaseParameter('first')
+    inplace = BaseParameter(False)
+
+    def run(self, df):
+        return df.drop_duplicates(subset=self.subset, keep=self.keep,
+                                  inplace=self.inplace)
+
+class SelectColumns(OpVertex):
+    columns = BaseParameter(None)
+    def run(self, df):
+        return df[self.columns]
+
+class DropNa(OpVertex):
+    axis=BaseParameter(0)
+    how=BaseParameter('any')
+    thresh=BaseParameter(None)
+    subset=BaseParameter(None)
+
+    def run(self, df):
+        return df.dropna(axis=self.axis, how=self.how, thresh=self.thresh,
+                         subset=self.subset, inplace=False)
 
 ######
 import threading
