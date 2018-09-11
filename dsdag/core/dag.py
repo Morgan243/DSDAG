@@ -11,6 +11,7 @@ class DAG(object):
                  read_from_cache=False,
                  write_to_cache=False,
                  cache=None,
+                 force_downstream_rerun=True,
                  pbar=True,
                  live_browse=False,
                  logger=None):
@@ -31,6 +32,7 @@ class DAG(object):
         self.read_from_cache = read_from_cache
         self.write_to_cache = write_to_cache
         self.using_cache = (self.read_from_cache or self.write_to_cache)
+        self.force_downstream_rerun = force_downstream_rerun
         if self.using_cache and (cache is None):
             self.logger("Use cache set, but None provided, creating default")
             self.cache = idt.RepoTree()
@@ -62,12 +64,13 @@ class DAG(object):
         self.outputs = dict()
         self.start_and_finish_times = dict()
         self.all_requirements = [d for t in self.topology for d in t]
+        self.completed_ops = dict()
 
     def __call__(self, *args, **kwargs):
         return self.run_dag()
 
     def __getitem__(self, item):
-        return self.name_to_op_map[item]
+        return self.completed_ops.get(item, self.name_to_op_map[item])
 
     def build(self, required_outputs):
         if not isinstance(required_outputs, list):
@@ -138,7 +141,7 @@ class DAG(object):
                      proc_args=None):
         p = process
 
-        self.logger.info("%s Executing %s" % (tpid, process.__class__.__name__))
+        self.logger.debug("%s Executing %s" % (tpid, process.__class__.__name__))
         start_t = time.time()
         if proc_exec_kwargs is None and proc_args is None:
             self.outputs[process] = p.run()
@@ -152,9 +155,10 @@ class DAG(object):
         finish_t = time.time()
         self.start_and_finish_times[process] = (start_t, finish_t)
 
-        self.logger.info("%s %s completed in %.2fs" % (tpid,
+        self.logger.debug("%s %s completed in %.2fs" % (tpid,
                                                        process.__class__.__name__,
                                                        finish_t - start_t))
+        self.completed_ops[p.get_name()] = p
 
     def run_dag(self):
         computed = set()
@@ -173,7 +177,7 @@ class DAG(object):
                 process_friendly_name = process.get_name()
                 process_repr = repr(process)
                 if self.pbar:
-                    self.tqdm_bar.set_description(process.unique_cls_name)
+                    self.tqdm_bar.set_description(process.get_name())
 
                 dependencies = self.dep_map.get(process, dict())
                 dep_values = dependencies.values() if isinstance(dependencies, dict) else dependencies
@@ -182,11 +186,12 @@ class DAG(object):
 
                 load_from_cache = (process not in self.required_outputs  # always run specified vertices
                                    and process._cacheable
-                                   and not any(p.__class__.__name__ in computed for p in dep_values)
+                                   and (not any(p.__class__.__name__ in computed for p in dep_values)
+                                        or not self.force_downstream_rerun)
                                    and self.read_from_cache
                                    and process_cls_name in self.cache)
                 if load_from_cache:
-                    self.logger.info("%s Will use cached output of %s"
+                    self.logger.debug("%s Will use cached output of %s"
                                      % (tpid, process_cls_name))
                     self.outputs[process] = self.cache[process_cls_name]
                 else:
@@ -250,10 +255,10 @@ class DAG(object):
 
                 # No reason to save the cached output back
                 if self.write_to_cache and not load_from_cache:
-                    self.logger.info("Persisting chassis.outputs")
+                    self.logger.debug("Persisting chassis.outputs")
                     self.cache.save(self.outputs[process],
                                         name=process_cls_name,
-                                        author='claim_impact_chassis',
+                                        author='dag',
                                         param_names=list(kwargs.keys()),
                                         auto_overwrite=True)
 
