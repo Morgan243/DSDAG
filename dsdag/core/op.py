@@ -53,6 +53,7 @@ class OpMeta(type):
 class OpVertex(object):
     _never_cache = False
     _instance_id_map = dict()
+    _given_name_cnt_map = dict()
     _closure_map = dict()
     def __init__(self, **kwargs):
         # For parameters:
@@ -68,6 +69,13 @@ class OpVertex(object):
         self._user_kwargs = kwargs
         self._parameters = self.scan_for_op_parameters(overrides=self._user_kwargs)
         self._name = kwargs.get('name', None)
+        if self._name is not None:
+            name_iid = self.__class__._given_name_cnt_map.get(self._name, 0)
+            new_name = self._name
+            if name_iid > 0:
+                new_name = self._name + '_' + str(name_iid)
+            self.__class__._given_name_cnt_map[self._name] = name_iid + 1
+            self._name = new_name
 
         self.unique_cls_name = str(self.__class__.__name__)
         iid = self.__class__._instance_id_map.get(self.unique_cls_name)
@@ -209,6 +217,17 @@ class OpVertex(object):
     @classmethod
     def passthrough_params(cls, dest_cls, cls_name, on_conflict='error', skip_params=None,
                            requirement_name=None):
+        """
+
+
+
+        :param dest_cls:
+        :param cls_name:
+        :param on_conflict:
+        :param skip_params:
+        :param requirement_name:
+        :return:
+        """
         params = cls.scan_for_op_parameters(overrides=dict())
         attrs_params = dict()
         for p_name, p in params.items():
@@ -256,7 +275,7 @@ class OpVertex(object):
 
 
     @classmethod
-    def scan_for_op_parameters(cls, overrides):
+    def scan_for_op_parameters(cls, overrides=None):
         """ Scans the class for BaseParameter types and returns mapping to them"""
         params = dict()
         for o_n in dir(cls):
@@ -266,9 +285,15 @@ class OpVertex(object):
                     raise ValueError("Parameter cannot use reserved keyword '%s'" % o_n)
                 params[o_n] = copy.copy(o)
 
-                if o_n in overrides:
+                if overrides is not None and o_n in overrides:
                     params[o_n].set_value(overrides[o_n])
         return params
+
+    @classmethod
+    def copy_op_parameters(cls, other, default_overrides=None):
+        params = cls.scan_for_op_parameters(overrides=default_overrides)
+        for o_n, o in params.items():
+            setattr(other, o_n, o)
 
     def with_requires_old(self, *args, **kwargs):
         if len(kwargs) == 0 and len(args) == 0:
