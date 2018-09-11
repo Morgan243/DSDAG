@@ -5,7 +5,7 @@ from pprint import pprint
 OpVertex = dsdag.core.op.OpVertex
 BaseParameter = dsdag.core.parameter.BaseParameter
 UnhashableParameter = dsdag.core.parameter.UnhashableParameter
-df_templates = dsdag.ext.pandas
+df_templates = dsdag.ext.dataframe
 DAG = dsdag.core.dag.DAG
 LambdaOp = dsdag.ext.misc.LambdaOp
 VarOp = dsdag.ext.misc.VarOp
