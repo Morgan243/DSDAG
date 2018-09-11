@@ -32,6 +32,18 @@ class Merge(OpVertex):
 
         return merged
 
+class Drop(OpVertex):
+    labels = BaseParameter()
+    axis = BaseParameter(0)
+
+    def run(self, df):
+        return df.drop(labels=self.labels, axis=self.axis)
+
+class Query(OpVertex):
+    q = BaseParameter()
+    def run(self, df):
+        return df.query(self.q)
+
 class RenameColumns(OpVertex):
     columns = BaseParameter(None)
     copy = BaseParameter(True)
