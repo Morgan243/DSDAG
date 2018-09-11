@@ -86,9 +86,26 @@ class SQLQueryParameter(BaseParameter):
         return "'%s ...'" % str(v)[:10].strip()
 
 import interactive_data_tree as idt
-class RepoTreeParameter(BaseParameter):
+class RepoTreeParameter(UnhashableParameter):
     def parse_value(self, v):
         return idt.RepoTree(v)
 
 class DataFrameParameter(BaseParameter):
     pass
+
+
+def ParamCopy(op, *params, **overrides):
+    if len(params) == 0:
+        params = op.scan_for_op_paramters(overrides)
+    else:
+        params = {p:getattr(op, p)
+                        for p in params}
+    return type('ParamCopyMixin', (object,), params)
+
+def ParamMixin_old(*ops, **kwops):
+
+    params = [o.scan_for_op_parameters(overrides=None) for o in ops]
+    params += [o.scan_for_op_parameters(overrides=None) for i in kwops.values()]
+    params = {p_n:p for o in params for p_n, p in o.items()}
+
+    return  type('ParamMixin', (object,), params)
