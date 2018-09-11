@@ -127,6 +127,8 @@ class SQL_ParamMixin():
     ON
         {join_condition}
     """
+    extra_q_kwargs = BaseParameter(None, "Mapping of additional format parameters that need to "
+                                         "be specified in the query (e.g. snapshot date, code)")
 
     def make_sql_param_kwargs(self):
         return dict(select_clause=self.select_clause,
@@ -135,6 +137,7 @@ class SQL_ParamMixin():
                     where_filter=self.where_clause,
                     groupby_add=self.groupby_clause,
                     join_ops=self.join_ops)
+
 
 class SQL_Param(SQL, SQL_ParamMixin):
     # not valid by default - but gets the point across
@@ -189,6 +192,10 @@ class SQL_Param(SQL, SQL_ParamMixin):
 
         #join_keys = named_join_queries.pop('join_keys', None)
 
+        if self.extra_q_kwargs is not None:
+            if not isinstance(self.extra_q_kwargs, dict):
+                raise ValueError("Parameter extra_q_kwargs for %s must be a dictionary" % self.__class__.__name__)
+            frmt_params.update(self.extra_q_kwargs)
 
         ####
         if len(named_join_queries) > 0:
@@ -326,3 +333,5 @@ class SQL_SelectFromDataFrame(SQL):
                              # This param is left for use later so that the same name can be used
                              # elsewhere (e.g. in a join statement)
                              subq_name=self.subq_name if self.subq_name is not None else "{sample_filter_name}")
+
+
