@@ -141,7 +141,9 @@ class DAG(object):
                      proc_args=None):
         p = process
 
-        self.logger.debug("%s Executing %s" % (tpid, process.__class__.__name__))
+        if not self.pbar:
+            self.logger.info("%s Executing %s" % (tpid, process.__class__.__name__))
+
         start_t = time.time()
         if proc_exec_kwargs is None and proc_args is None:
             self.outputs[process] = p.run()
@@ -155,9 +157,10 @@ class DAG(object):
         finish_t = time.time()
         self.start_and_finish_times[process] = (start_t, finish_t)
 
-        self.logger.debug("%s %s completed in %.2fs" % (tpid,
-                                                       process.__class__.__name__,
-                                                       finish_t - start_t))
+        if not self.pbar:
+            self.logger.info("%s %s completed in %.2fs" % (tpid,
+                                                           process.__class__.__name__,
+                                                           finish_t - start_t))
         self.completed_ops[p.get_name()] = p
 
     def run_dag(self):
@@ -177,7 +180,9 @@ class DAG(object):
                 process_friendly_name = process.get_name()
                 process_repr = repr(process)
                 if self.pbar:
-                    self.tqdm_bar.set_description(process.get_name())
+                    self.tqdm_bar.set_description(process_friendly_name)
+                else:
+                    self.logger.info(process_friendly_name)
 
                 dependencies = self.dep_map.get(process, dict())
                 dep_values = dependencies.values() if isinstance(dependencies, dict) else dependencies
@@ -191,8 +196,9 @@ class DAG(object):
                                    and self.read_from_cache
                                    and process_cls_name in self.cache)
                 if load_from_cache:
-                    self.logger.debug("%s Will use cached output of %s"
-                                     % (tpid, process_cls_name))
+                    if not self.pbar:
+                        self.logger.info("%s Will use cached output of %s"
+                                         % (tpid, process_cls_name))
                     self.outputs[process] = self.cache[process_cls_name]
                 else:
                     kwargs = dict()
@@ -254,8 +260,9 @@ class DAG(object):
                         del self.outputs[k]
 
                 # No reason to save the cached output back
-                if self.write_to_cache and not load_from_cache:
-                    self.logger.debug("Persisting chassis.outputs")
+                if self.write_to_cache and not load_from_cache and process._cacheable:
+                    if not self.pbar:
+                        self.logger.info("Persisting output of %s" % process_cls_name)
                     self.cache.save(self.outputs[process],
                                         name=process_cls_name,
                                         author='dag',
