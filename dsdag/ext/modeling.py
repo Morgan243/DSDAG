@@ -69,6 +69,7 @@ class BaseBinaryClassifierModel(BaseWrangler):
     #model_rt = RepoTreeParameter(None)
     model_rt = UnhashableParameter(None)
     scoring_model_name = BaseParameter(None)
+    comp_key = BaseParameter(None, "Set the key/index for output scores and other metrics")
     score_series_name = BaseParameter('proba')
 
     # WARN: Process assumes that higher scores are better
@@ -124,10 +125,10 @@ class BaseBinaryClassifierModel(BaseWrangler):
 
             logger.info("Using %s " % m_leaf.name)
             model = m_leaf.load()
-        probas = model.predict_proba(df[self.covariates])
+        probas = model.predict_proba(df[self.features])
 
         s = pd.Series(probas[:, 1], name=self.score_series_name,
-                      index=df.set_index(self.comp_key).index)
+                      index=df.set_index(self.comp_key).index if self.comp_key is not None else df.index)
         return s
 
 
@@ -317,6 +318,12 @@ class BaseBinaryClassifierModel(BaseWrangler):
             model_res[m_name] = m
 
         return model_res, perf_res
+
+
+class DecisionTreeClassifier(BaseBinaryClassifierModel):
+        param_search_models =[
+        (DecisionTreeClassifier, dict(max_depth=range(2, 23, 2), criterion=['gini', 'entropy'],
+                                      min_samples_split=range(2, 20, 1)))]
 
 
 class BootstrapFeatureImportances(OpVertex):
