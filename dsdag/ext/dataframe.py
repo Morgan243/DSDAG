@@ -1,7 +1,12 @@
 from dsdag.core.parameter import BaseParameter
 from dsdag.core.op import OpVertex
+import pandas as pd
 
-class Merge(OpVertex):
+class DFOp(OpVertex):
+    def _node_color(self):
+        return '#615eff'
+
+class Merge(DFOp):
     #key = BaseParameter()
     how = BaseParameter('inner')
 
@@ -32,19 +37,46 @@ class Merge(OpVertex):
 
         return merged
 
-class Drop(OpVertex):
+class Concat(DFOp):
+    axis = BaseParameter(0)
+    join = BaseParameter('outer')
+    ignore_index = BaseParameter(False)
+    keys = BaseParameter(None)
+    levels = BaseParameter(None)
+    verify_integrity = BaseParameter(False)
+    sort = BaseParameter(None)
+    copy = BaseParameter(True)
+
+    def requires(self):
+        raise NotImplementedError()
+
+    def run(self, *args):
+        return pd.concat(args, axis=self.axis, join=self.join,
+                         ignore_index=self.ignore_index,
+                         keys=self.keys, levels=self.levels,
+                         verify_integrity=self.verify_integrity,
+                         sort=self.sort, copy=self.copy)
+
+class Drop(DFOp):
     labels = BaseParameter()
     axis = BaseParameter(0)
 
     def run(self, df):
         return df.drop(labels=self.labels, axis=self.axis)
 
-class Query(OpVertex):
+class Query(DFOp):
     q = BaseParameter()
     def run(self, df):
         return df.query(self.q)
 
-class RenameColumns(OpVertex):
+class AssignColumn(DFOp):
+    column = BaseParameter()
+    value = BaseParameter()
+    def run(self, df):
+        df[self.column] = self.value
+        return df
+
+class RenameColumns(DFOp):
     columns = BaseParameter(None)
     copy = BaseParameter(True)
     inplace = BaseParameter(False)
@@ -54,7 +86,7 @@ class RenameColumns(OpVertex):
         return  df.rename(columns=self.columns, copy=self.copy,
                           inplace=self.inplace, level=self.level)
 
-class DropDuplicates(OpVertex):
+class DropDuplicates(DFOp):
     subset = BaseParameter(None)
     keep = BaseParameter('first')
     inplace = BaseParameter(False)
@@ -63,12 +95,12 @@ class DropDuplicates(OpVertex):
         return df.drop_duplicates(subset=self.subset, keep=self.keep,
                                   inplace=self.inplace)
 
-class SelectColumns(OpVertex):
+class SelectColumns(DFOp):
     columns = BaseParameter(None)
     def run(self, df):
         return df[self.columns]
 
-class DropNa(OpVertex):
+class DropNa(DFOp):
     axis=BaseParameter(0)
     how=BaseParameter('any')
     thresh=BaseParameter(None)
@@ -244,7 +276,7 @@ class FrameBrowseMaixin():
          #   return df
 
 
-class FrameBrowse(OpVertex, FrameBrowseMaixin):
+class FrameBrowse(DFOp, FrameBrowseMaixin):
     passthrough = BaseParameter(True)
 
     def op_nb_viz(self, op_out, viz_out=None):
