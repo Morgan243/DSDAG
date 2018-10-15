@@ -72,6 +72,9 @@ class DAG(object):
     def __getitem__(self, item):
         return self.completed_ops.get(item, self.name_to_op_map[item])
 
+    def _ipython_key_completions_(self):
+        return list(self.name_to_op_map.keys())
+
     def build(self, required_outputs):
         if not isinstance(required_outputs, list):
             msg = "DAG's build method only accepts a list of outputs"
@@ -219,7 +222,7 @@ class DAG(object):
                                           tpid=tpid)
                     elif isinstance(dependencies, list):
                         proc_args = list()
-                        for i, v in enumerate(dependencies):
+                        for _i, v in enumerate(dependencies):
                             if v not in self.outputs:
                                 msg = "The process %s has a missing dependency:" % process_cls_name
                                 msg += "%s=%s" % (k, v.__class__.__name__)

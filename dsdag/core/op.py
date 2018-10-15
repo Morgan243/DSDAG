@@ -188,8 +188,13 @@ class OpVertex(object):
             raise ValueError(msg)
         self._dag = dag
 
-    def get_logger(self):
-        return self._dag.logger
+    def get_logger(self, log_level='WARN'):
+        if self._dag is not None:
+            l = self._dag.logger
+        else:
+            l = logging.getLogger()
+            l.setLevel(log_level)
+        return l
 
     def get_name(self):
         return self._name if self._name is not None else self.unique_cls_name
