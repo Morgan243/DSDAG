@@ -86,6 +86,12 @@ class RenameColumns(DFOp):
         return  df.rename(columns=self.columns, copy=self.copy,
                           inplace=self.inplace, level=self.level)
 
+class ApplyMap(DFOp):
+    func = BaseParameter()
+
+    def run(self, df):
+        return df.applymap(func=self.func)
+
 class DropDuplicates(DFOp):
     subset = BaseParameter(None)
     keep = BaseParameter('first')
