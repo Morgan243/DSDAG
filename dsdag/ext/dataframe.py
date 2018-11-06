@@ -57,6 +57,23 @@ class Concat(DFOp):
                          verify_integrity=self.verify_integrity,
                          sort=self.sort, copy=self.copy)
 
+class Join(DFOp):
+    how = BaseParameter('left')
+    lsuffix = BaseParameter('')
+    rsuffix = BaseParameter('')
+    sort = BaseParameter(False)
+
+    def requires(self):
+        raise NotImplementedError()
+
+    def run(self, *args):
+        assert all(isinstance(o, pd.DataFrame) for o in args)
+        ret = args[0]
+        for o in args[1:]:
+            ret = ret.join(o, how=self.how, lsuffix=self.lsuffix,
+                           rsuffix=self.rsuffix, sort=self.sort)
+        return ret
+
 class Drop(DFOp):
     labels = BaseParameter()
     axis = BaseParameter(0)
