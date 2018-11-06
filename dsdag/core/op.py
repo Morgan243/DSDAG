@@ -11,46 +11,30 @@ import pandas as pd
 from parameter import BaseParameter, UnhashableParameter
 
 class OpMeta(type):
-    existing = dict()
+    """Updates doc strings on creation of new op by scanning op parameters"""
+    _i = 0
     def __new__(cls, name, parents, dct):
         # Both brand new Ops and derived ones will enter this method
         _cls =  super(OpMeta, cls).__new__(cls, name, parents, dct)
+        docs = name
+        docs += '\n\n'
+        docs += 'Parameters\n'
+        docs += '----------\n'
+        docs += "\n".join("%s : %s" % (k, str(param.help_msg))
+                          for k, param in
+                          _cls.scan_for_op_parameters(overrides=dict()).items())
+        docs += '\n\n\n'
 
-        # If the Op exists, but is applied differently (differing parameters or inptus)
-        #   - Lineage ID must persist through
-        # Op is brand new
-        #   - Needs a new lineage id
-        # Could this be replaced with 'issubclass'
-        if _cls not in cls.existing:
-            docs = name
-            docs += '\n\n'
-            docs += 'Parameters\n'
-            docs += '----------\n'
-            docs += "\n".join("%s : %s" % (k, str(param.help_msg))
-                              for k, param in
-                              _cls.scan_for_op_parameters(overrides=dict()).items())
-            docs += '\n\n\n'
-
-            _cls.__doc__ = docs
-            cls.existing[_cls] = _cls
-
-            if not hasattr(_cls, '_op_lineage_id') or _cls._op_lineage_id is None:
-                _cls._op_lineage_id = str(uuid.uuid4())
-            #_cls._op_lineage_id = str(uuid.uuid4())
-        else:
-            _cls = cls.existing[_cls]
-
-        cnt = sum(c.__name__ == _cls.__name__
-                  for c in cls.existing.keys())
-        if cnt > 1:
-            _cls.unique_cls_name = "%s%d" % (str(_cls.__name__), cnt - 1)
-        else:
-            _cls.unique_cls_name = str(_cls.__name__)
+        _cls.__doc__ = docs
 
         return _cls
 
+    def __call__(cls, *args, **kwargs):
+        o = type.__call__(cls, *args, **kwargs)
+        return o
 
 class OpVertex(object):
+    __metaclass__ = OpMeta
     _never_cache = False
     _instance_id_map = dict()
     _given_name_cnt_map = dict()
@@ -87,7 +71,6 @@ class OpVertex(object):
 
         for p_n, p, in self._parameters.items():
             setattr(self, p_n, p.value)
-        self.__update_doc_str()
 
         self._cacheable = not self._never_cache
 
