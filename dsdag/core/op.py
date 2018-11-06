@@ -105,22 +105,6 @@ class OpVertex(object):
     def req_match(self, other):
         return self.requires.__func__ == other.requires.__func__
 
-    def old_req_match(self, other):
-        self_reqs = self._dag.dep_map[self]
-        other_reqs = self._dag.dep_map[other]
-
-        if len(self_reqs) != len(other_reqs):
-            return False
-
-        for req_name, req_o in self_reqs.items():
-            if req_name not in other_reqs:
-                return False
-
-            if req_o != other_reqs[req_name]:
-                return False
-
-        return True
-
     def param_match(self, other):
         self_params = self.get_parameters()
         other_params = other.get_parameters()
