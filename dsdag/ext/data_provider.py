@@ -58,6 +58,10 @@ class BaseDataProvider(OpVertex):
         #return self.
 
 
+class OracleDataProvider(BaseDataProvider):
+    system = BaseParameter('oracle')
+
+
 class DataTreeLoader(OpVertex):
     rt_leaf = RepoTreeParameter()
     _never_cache = True
