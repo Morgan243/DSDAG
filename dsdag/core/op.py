@@ -39,49 +39,43 @@ class OpVertex(object):
     _instance_id_map = dict()
     _given_name_cnt_map = dict()
     _closure_map = dict()
-    def __init__(self, **kwargs):
+    def __new__(cls, **kwargs):
+        obj = super(OpVertex, cls).__new__(cls)
         # For parameters:
         #   (1) An attribute stores the full (Base)Parameter Instance
         #       - store under parameters
         #   (2) The value of each parameter is assigned to self
 
         # Filled out during build call
-        self._built = False
-        self.req_hash = None
+        obj._built = False
+        obj.req_hash = None
 
-        self._dag = None
-        self._user_kwargs = kwargs
-        self._parameters = self.scan_for_op_parameters(overrides=self._user_kwargs)
-        self._name = kwargs.get('name', None)
-        if self._name is not None:
-            name_iid = self.__class__._given_name_cnt_map.get(self._name, 0)
-            new_name = self._name
+        obj._dag = None
+        obj._user_kwargs = kwargs
+        obj._parameters = obj.scan_for_op_parameters(overrides=obj._user_kwargs)
+        obj._name = kwargs.get('name', None)
+        if obj._name is not None:
+            name_iid = obj.__class__._given_name_cnt_map.get(obj._name, 0)
+            new_name = obj._name
             if name_iid > 0:
-                new_name = self._name + '_' + str(name_iid)
-            self.__class__._given_name_cnt_map[self._name] = name_iid + 1
-            self._name = new_name
+                new_name = obj._name + '_' + str(name_iid)
+            obj.__class__._given_name_cnt_map[obj._name] = name_iid + 1
+            obj._name = new_name
 
-        self.unique_cls_name = str(self.__class__.__name__)
-        iid = self.__class__._instance_id_map.get(self.unique_cls_name)
+        obj.unique_cls_name = str(obj.__class__.__name__)
+        iid = obj.__class__._instance_id_map.get(obj.unique_cls_name)
         if iid is not None:
-            self.__class__._instance_id_map[self.unique_cls_name] += 1
-            self.unique_cls_name += '_%s' % str(iid)
+            obj.__class__._instance_id_map[obj.unique_cls_name] += 1
+            obj.unique_cls_name += '_%s' % str(iid)
         else:
-            self.__class__._instance_id_map[self.unique_cls_name] = 1
+            obj.__class__._instance_id_map[obj.unique_cls_name] = 1
 
-        for p_n, p, in self._parameters.items():
-            setattr(self, p_n, p.value)
+        for p_n, p, in obj._parameters.items():
+            setattr(obj, p_n, p.value)
 
-        self._cacheable = not self._never_cache
+        obj._cacheable = not obj._never_cache
 
-    def __update_doc_str(self):
-        #docs = self.__class__.__name__
-        docs = self.unique_cls_name
-        docs += '\n'
-
-        docs += "\n".join("%s : %s" % (k, str(param.help_msg))
-                          for k, param in self._parameters.items())
-        self.__doc__ = docs
+        return obj
 
     def __call__(self, *args, **kwargs):
         return self.with_requires(*args, **kwargs)
