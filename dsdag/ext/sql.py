@@ -109,7 +109,11 @@ class SQL_WrapAs(OpVertex):
 class SQL_ParamMixin():
     select_clause = BaseParameter(None,
                                 help_msg="(Optional) Select statement to include after SELECT, but before FROM ")
-    key_map = BaseParameter(None, help_msg="Map select alias to select source (clnt_ref_id->'CL.clnt_ref_id/10')")
+    key_map = BaseParameter(None,
+                            help_msg="Map select alias to select source (clnt_ref_id->'CL.clnt_ref_id/10')")
+
+    ### CLAUSES
+    # Raw SQL text to inserted into the query
     join_clause = BaseParameter(None,
                                 help_msg="(Optional) Join statement to include after FROM but before WHERE")
     where_clause = BaseParameter(None,
@@ -134,6 +138,7 @@ class SQL_ParamMixin():
         return dict(select_clause=self.select_clause,
                     key_map=self.key_map,
                     join_clause=self.join_clause,
+                    join_keys=self.join_keys,
                     where_filter=self.where_clause,
                     groupby_add=self.groupby_clause,
                     join_ops=self.join_ops)
@@ -151,7 +156,7 @@ class SQL_Param(SQL, SQL_ParamMixin):
             if not all(isinstance(o, (SQL, SQL_WrapAs)) for o in self.join_ops.values()):
                 raise ValueError("All join ops must be SQL derived")
             return self.join_ops
-        elif issubclass(self.join_ops, (OpVertex, SQL)):
+        elif issubclass(type(self.join_ops), (OpVertex, SQL)):
             return dict(param_subq = self.join_ops)
         else:
             raise ValueError("Don't understand join ops parameter: %s" % str(type(self.join_ops)))
@@ -248,7 +253,7 @@ class SQL_CountSamples(SQL):
 
 
 class SQL_RandomSample(SQL):
-    q = """select * from ({subq}) as {name} where random() < {rate} {where_addon}"""
+    q = """select * from ({subq}) as {alias} where random() < {rate} {where_addon}"""
     alias = BaseParameter("sq", help_msg="Alias for sub query")
     rate = BaseParameter(.1)
     where_addon = BaseParameter(None)
@@ -264,7 +269,8 @@ class SQL_RandomSample(SQL):
 
         return self.q.format(subq=subq, rate=self.rate,
                              where_addon=self.where_addon,
-                             name=self.name)
+                             alias=self.alias)
+                             #name=self.get_name())
 
 class SQL_WrapQuery(SQL):
     q = """select {select_clause} from ({subq}) as {subq_alias} {where_addon}"""
