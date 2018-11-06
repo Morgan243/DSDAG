@@ -12,9 +12,7 @@ from parameter import BaseParameter, UnhashableParameter
 
 class OpMeta(type):
     """Updates doc strings on creation of new op by scanning op parameters"""
-    _i = 0
     def __new__(cls, name, parents, dct):
-        # Both brand new Ops and derived ones will enter this method
         _cls =  super(OpMeta, cls).__new__(cls, name, parents, dct)
         docs = name
         docs += '\n\n'
@@ -30,6 +28,7 @@ class OpMeta(type):
         return _cls
 
     def __call__(cls, *args, **kwargs):
+        # Deduplication of ops should probably happen here?
         o = type.__call__(cls, *args, **kwargs)
         return o
 
