@@ -1,6 +1,6 @@
 import string
 from string import Formatter
-from dsdag.core.op import OpVertex
+from dsdag.core.op import OpVertex, OpMeta
 
 from dsdag.core.parameter import BaseParameter, UnhashableParameter
 
@@ -19,12 +19,15 @@ def highlight_sql(q):
     html = style_html + pygment_html
     return html
 
-class SQL_Parts():
-    select_statement = BaseParameter("*")
-    from_statement = BaseParameter()
-    where_statement = BaseParameter()
-
 class SQL(OpVertex):
+    """
+    Provides a 'q' parameter and a highlighted representation for notebook views.
+
+    This Op by itself will attemp to populate string paramteres with arguments passed
+    to the op during runtime. If wrap as is set, then the query will be wrapped in
+    a sub query. Regardless, the resulting query string is returned at runtime.
+
+    """
     q = BaseParameter(default="""select * from something limit 100""")
     wrap_as = BaseParameter(None, help_msg="Wrap the sql query in () as ")
 
@@ -88,6 +91,9 @@ class SQL(OpVertex):
 
 
 class SQL_WrapAs(OpVertex):
+    """
+    Wraps a query string as a sub-query
+    """
     alias = BaseParameter(None, help_msg="Wrap the sql query in () as <alias>")
 
     def run(self, q):
@@ -107,19 +113,28 @@ class SQL_WrapAs(OpVertex):
         return '#59ba5e'
 
 class SQL_ParamMixin():
-    select_clause = BaseParameter(None,
-                                help_msg="(Optional) Select statement to include after SELECT, but before FROM ")
+    __metaclass__ = OpMeta
+    """
+    Contains many baseline parameters useful for query Ops, including clauses, key_map, and join_keys.
+
+    Other than parameters, this Op provides a helper method to collect all parameters into a dictionary,
+    useful when all parameters need to be passed to a required SQL param Op from a non-SQL param op.
+    """
     key_map = BaseParameter(None,
                             help_msg="Map select alias to select source (clnt_ref_id->'CL.clnt_ref_id/10')")
 
     ### CLAUSES
     # Raw SQL text to inserted into the query
+    select_clause = BaseParameter(None,
+                                  help_msg="Select statement to include after SELECT, but before FROM ")
     join_clause = BaseParameter(None,
-                                help_msg="(Optional) Join statement to include after FROM but before WHERE")
+                                help_msg="Join statement to include after FROM but before WHERE")
     where_clause = BaseParameter(None,
-                                 help_msg="(Optional) SQL filter to be appended to the WHERE clause")
+                                 help_msg="SQL filter to be appended to the WHERE clause")
     groupby_clause = BaseParameter(None,
-                                 help_msg="(Optional) SQL filter to be appended to the WHERE clause")
+                                 help_msg="SQL filter to be appended to the WHERE clause")
+    ###
+
     join_ops = BaseParameter(None,
                              "Pass a SQL Op or mapping of SQL Ops to be joined. These will"
                              "specified as requirements by this OP and will be passed as named_joined_queries"
@@ -146,21 +161,22 @@ class SQL_ParamMixin():
 
 class SQL_Param(SQL, SQL_ParamMixin):
     # not valid by default - but gets the point across
-    q = BaseParameter(default="""select * {select_clause} from something limit 
-{join_clause} 100 WHERE {where_filt}""")
+    #q = BaseParameter(default="""select * {select_clause} from something limit
+#{join_clause} 100 WHERE {where_filt}""")
 
     def requires(self):
         if self.join_ops is None:
             return dict()
         elif isinstance(self.join_ops, dict):
+            # A dictionary mapping join names to ops - just return it as requirements
             if not all(isinstance(o, (SQL, SQL_WrapAs)) for o in self.join_ops.values()):
                 raise ValueError("All join ops must be SQL derived")
             return self.join_ops
         elif issubclass(type(self.join_ops), (OpVertex, SQL)):
+            # No name given, so just make one up ('param_subq')
             return dict(param_subq = self.join_ops)
         else:
             raise ValueError("Don't understand join ops parameter: %s" % str(type(self.join_ops)))
-
 
     def _join_statement_from_param_clause(self, q_name, q):
         jc = self._join_clause.format(sample_filter_name=q_name,
@@ -183,8 +199,8 @@ class SQL_Param(SQL, SQL_ParamMixin):
 
         return jc
 
-
     def run(self, *join_queries, **named_join_queries):
+        # Default to empty string for clause additions
         frmt_params = dict(select_clause = "" if self.select_clause is None else self.select_clause,
                             where_clause = "" if self.where_clause is None else self.where_clause,
                             join_clause = "" if self.join_clause is None else self.join_clause,

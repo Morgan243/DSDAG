@@ -9,6 +9,7 @@ class BaseParameter(object):
     def __init__(self, default=_UnsetParameter(),
                  help_msg=None):
         self.is_unset = True
+        self.optional = not isinstance(default, _UnsetParameter)
         self.help_msg = help_msg
         self.default_value = default
         self.uid = str(uuid.uuid4())

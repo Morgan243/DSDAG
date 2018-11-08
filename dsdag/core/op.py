@@ -9,28 +9,78 @@ import logging
 import pandas as pd
 
 from parameter import BaseParameter, UnhashableParameter
+import collections
+
+def make_param_doc_str(param_name, param_help, wrap_len=80,
+                       optional=False,
+                       none_msg='<no help message provided>'):
+    base_str = (param_name + ' : '
+                + ('(OPTIONAL)' if optional else '')
+                + (param_help if param_help is not None else none_msg))
+
+    pad_len = len(param_name) + 3 # +2 is for space plus ':'
+    step_size = wrap_len - pad_len
+
+    lines = [base_str[:wrap_len]]
+    lines += [(' ' * pad_len) + base_str[i: i + step_size ].strip()
+              for i in range(wrap_len, len(base_str), step_size)]
+
+
+    return "\n".join(lines)
 
 class OpMeta(type):
     """Updates doc strings on creation of new op by scanning op parameters"""
+
+    # Prepare is only supported in python 3+ :(
+    @classmethod
+    def __prepare__(cls, name, bases):
+        return collections.OrderedDict()
+
     def __new__(cls, name, parents, dct):
+        # not actually ordered in python 2.*
+        dct['__ordered_params__'] = [k for k, v in dct.items()
+                                    if isinstance(v, BaseParameter) or issubclass(type(v), BaseParameter)]
+        parent_params = {p: getattr(p, '__ordered_params__', list())
+                            for p in parents }
+
+        parent_params.update({_k: _v for k, v in parent_params.items()
+                                for _k, _v in getattr(k, '__parents_params__', dict()).items()
+                                if len(_v) > 0})
+        dct['__parents_params__'] = parent_params
+
         _cls =  super(OpMeta, cls).__new__(cls, name, parents, dct)
-        docs = name
+        docs = _cls.__doc__.strip() if _cls.__doc__ is not None else name
         docs += '\n\n'
         docs += 'Parameters\n'
         docs += '----------\n'
-        docs += "\n".join("%s : %s" % (k, str(param.help_msg))
-                          for k, param in
-                          _cls.scan_for_op_parameters(overrides=dict()).items())
+        docs += "\n".join(make_param_doc_str(k,
+                                             getattr(_cls, k).help_msg,
+                                             optional=getattr(_cls, k).optional)
+                                for k in dct['__ordered_params__'])
+
+        if len(_cls.__parents_params__) > 0:
+            #docs += '\n\n\n------------------\n'
+            docs += '\n\n\n[Inherited Parameters]'
+        for parent_cls, param_names in _cls.__parents_params__.items():
+            if len(param_names) == 0:
+                continue
+            heading = '\n\n%s' % parent_cls.__name__
+            heading += '\n' + ('-'*len(heading)) + '\n'
+            docs += heading
+            docs += "\n".join(make_param_doc_str(k,
+                                                 getattr(parent_cls, k).help_msg,
+                                                 optional=getattr(parent_cls, k).optional)
+                              for k in param_names)
         docs += '\n\n\n'
 
         _cls.__doc__ = docs
 
         return _cls
 
-    def __call__(cls, *args, **kwargs):
+    #def __call__(cls, *args, **kwargs):
         # Deduplication of ops should probably happen here?
-        o = type.__call__(cls, *args, **kwargs)
-        return o
+        #o = type.__call__(cls, *args, **kwargs)
+        #return o
 
 class OpVertex(object):
     __metaclass__ = OpMeta
@@ -38,8 +88,11 @@ class OpVertex(object):
     _instance_id_map = dict()
     _given_name_cnt_map = dict()
     _closure_map = dict()
-    def __new__(cls, **kwargs):
+    def __new__(cls, *args, **kwargs):
         obj = super(OpVertex, cls).__new__(cls)
+
+        # TODO: align %args with ordered dict args
+
         # For parameters:
         #   (1) An attribute stores the full (Base)Parameter Instance
         #       - store under parameters
@@ -50,6 +103,10 @@ class OpVertex(object):
         obj.req_hash = None
 
         obj._dag = None
+        obj._user_args = args
+        if len(obj._user_args) > 0:
+            raise ValueError("Ops do not currently support non-keyword constructor arguments")
+
         obj._user_kwargs = kwargs
         obj._parameters = obj.scan_for_op_parameters(overrides=obj._user_kwargs)
         obj._name = kwargs.get('name', None)
@@ -77,7 +134,7 @@ class OpVertex(object):
         return obj
 
     def __call__(self, *args, **kwargs):
-        return self.with_requires(*args, **kwargs)
+        return self.apply(*args, **kwargs)
 
     def __repr__(self):
         params = self.get_parameters()
@@ -101,10 +158,10 @@ class OpVertex(object):
         return hash((type(self), p_tuples, r))
         #return hash((self.unique_cls_name, p_tuples, r_tuples))
 
-    def req_match(self, other):
+    def _req_match(self, other):
         return self.requires.__func__ == other.requires.__func__
 
-    def param_match(self, other):
+    def _param_match(self, other):
         self_params = self.get_parameters()
         other_params = other.get_parameters()
 
@@ -127,10 +184,10 @@ class OpVertex(object):
         if not isinstance(other, OpVertex) and not issubclass(type(other), OpVertex):
             return False
 
-        if not self.param_match(other):
+        if not self._param_match(other):
             return False
 
-        if not self.req_match(other):
+        if not self._req_match(other):
             return False
 
         if not isinstance(self, type(other)):# and not issubclass(type(self), type(other)):
@@ -148,17 +205,6 @@ class OpVertex(object):
             raise ValueError(msg)
         self._dag = dag
 
-    def get_logger(self, log_level='WARN'):
-        if self._dag is not None:
-            l = self._dag.logger
-        else:
-            l = logging.getLogger()
-            l.setLevel(log_level)
-        return l
-
-    def get_name(self):
-        return self._name if self._name is not None else self.unique_cls_name
-
     def _node_color(self):
         return 'lightblue2'
 
@@ -172,6 +218,17 @@ class OpVertex(object):
         return dict(color=self._node_color(),
                     style=self._node_style(),
                     shape=self._node_shape())
+
+    def get_logger(self, log_level='WARN'):
+        if self._dag is not None:
+            l = self._dag.logger
+        else:
+            l = logging.getLogger()
+            l.setLevel(log_level)
+        return l
+
+    def get_name(self):
+        return self._name if self._name is not None else self.unique_cls_name
 
     def set_cacheable(self, is_cacheable):
         self._cacheable = is_cacheable
@@ -201,14 +258,12 @@ class OpVertex(object):
 
             if hasattr(dest_cls, p_name):
                 if on_conflict == 'use_src':
-                    #setattr(new_cls, p_name, p)
                     attrs_params[p_name] = p
                 elif on_conflict == 'use_dest':
                     pass
                 else:
                     raise ValueError("Param with name %s already exists on %s" % (p_name, str(dest_cls)))
             else:
-                #setattr(new_cls, p_name, p)
                 attrs_params[p_name] = p
 
         if requirement_name is not None:
@@ -230,14 +285,11 @@ class OpVertex(object):
         A Pass through requirement inherits it's parent's parameters and constructs a requires method that
         instatiate those requirements and passes the param values through (i.e. passthrough)
         """
-        # Mix inputs (mixin)?
-        #params = cls.scan_for_op_parameters(overrides=dict())
-        #attrs_params = dict()
         dst_cls = cls
         for r_name, r_op in pass_reqs.items():
             dst_cls = r_op.passthrough_params(dst_cls, "Passthrough" + cls.__name__,
                                               on_conflict=on_conflict, skip_params=skip_params)
-
+        return dst_cls
 
     @classmethod
     def scan_for_op_parameters(cls, overrides=None):
@@ -260,33 +312,7 @@ class OpVertex(object):
         for o_n, o in params.items():
             setattr(other, o_n, o)
 
-    def with_requires_old(self, *args, **kwargs):
-        if len(kwargs) == 0 and len(args) == 0:
-            return self
-        elif len(kwargs) != 0:
-            req_ret = kwargs
-        elif len(args) != 0:
-            from dsdag.ext.misc import VarOp
-            # not supports *args just yet
-            req_ret = list(args)
-            req_ret = [a if isinstance(a, OpVertex) or issubclass(a.__class__, OpVertex)
-                       else VarOp(obj=a)
-                       for a in req_ret]
-
-        else:
-            msg = "Mix of *args and **kwargs not supported (yet?)"
-            raise ValueError(msg)
-
-        def closure(self):
-            return req_ret
-        # Define new Op class that has correct requires
-        new_class = OpMeta(self.unique_cls_name, (type(self),),
-                           {'requires':closure,
-                            '_op_lineage_id': self._instance_id})
-
-        return new_class(**self._user_kwargs)
-
-    def with_requires(self, *args, **kwargs):
+    def apply(self, *args, **kwargs):
         if len(kwargs) == 0 and len(args) == 0:
             return self
         elif len(kwargs) != 0:
@@ -294,10 +320,8 @@ class OpVertex(object):
             req_ret = kwargs
             req_hash = hash(tuple((k, v if isinstance(v, OpVertex) or issubclass(v.__class__, OpVertex) else VarOp(obj=v))
                         for k, v in kwargs.items()))
-            #req_hash = hash(tuple(req_ret))
         elif len(args) != 0:
             from dsdag.ext.misc import VarOp
-            # not supports *args just yet
             req_ret = list(args)
             req_ret = [a if isinstance(a, OpVertex) or issubclass(a.__class__, OpVertex)
                        else VarOp(obj=a)
@@ -324,12 +348,10 @@ class OpVertex(object):
     @classmethod
     def with_params(cls, op_name=None, **kwargs):
         for k, v in kwargs.items():
-            assert (isinstance(v, BaseParameter)
-                    or issubclass(type(v), BaseParameter))
+            if not (isinstance(v, BaseParameter) or issubclass(type(v), BaseParameter)):
+                raise ValueError("New parameters must all be derived from %s" % BaseParameter.__name__)
         name = (cls.__name__ + "WithParams") if op_name is None else op_name
-        new_c = type(name,
-                     (cls,),
-                     kwargs)
+        new_c = OpMeta(name, (cls,), kwargs)
         return new_c
 
     def get_parameters(self):
@@ -354,9 +376,6 @@ class OpVertex(object):
 
         viz_out.append_display_data("op_nb_viz not implemented!")
         return viz_out
-
-
-
 
 
 ##############

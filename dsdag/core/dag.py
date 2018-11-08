@@ -3,16 +3,16 @@ import interactive_data_tree as idt
 import time
 from toposort import toposort
 import pandas as pd #TODO: this dep should not be in core dag
+from dsdag.core.op import OpVertex
 
-# TODO: Must dedup the Operations so that they are run once in the depends
-#       keep track of different ops and their params - don't instantiate the same
 class DAG(object):
+    _default_log_level = 'INFO'
     def __init__(self, required_outputs,
                  read_from_cache=False,
                  write_to_cache=False,
                  cache=None,
                  force_downstream_rerun=True,
-                 pbar=True,
+                 pbar=False,
                  live_browse=False,
                  logger=None):
         if isinstance(logger, basestring):
@@ -20,7 +20,7 @@ class DAG(object):
             log_level = logger
             logger = None
         else:
-            log_level = 'WARN'
+            log_level = DAG._default_log_level
 
         if logger is None:
             logger = logging.getLogger()
@@ -33,8 +33,9 @@ class DAG(object):
         self.write_to_cache = write_to_cache
         self.using_cache = (self.read_from_cache or self.write_to_cache)
         self.force_downstream_rerun = force_downstream_rerun
+
         if self.using_cache and (cache is None):
-            self.logger("Use cache set, but None provided, creating default")
+            self.logger.warning("Use cache set, but None provided, creating default")
             self.cache = idt.RepoTree()
         elif cache is not None:
             self.cache = cache
@@ -98,12 +99,16 @@ class DAG(object):
             dep_map[o] = o.requires()
 
             # requires can return a map (for kwargs) or a list (for args)
-            if isinstance(dep_map[o], list):
+            if isinstance(dep_map[o], (list, tuple)):
                 deps_to_resolve += list(dep_map[o])
             elif isinstance(dep_map[o], dict):
                 deps_to_resolve += list(dep_map[o].values())
             else:
-                raise ValueError("requires must return a list or dict")
+                if not isinstance(dep_map[o], OpVertex) and not issubclass(type(dep_map[o]), OpVertex):
+                    raise ValueError("requires must return a list or dict of OpVertices or a single OpVertex")
+                # Treat single op returns like a list with only one element
+                dep_map[o] = [dep_map[o]]
+                deps_to_resolve += dep_map[o]
 
             # With every new Op, we want to check that this Op isn't
             # already being satisfied.
@@ -116,8 +121,7 @@ class DAG(object):
                         # If this is already satisified
                         if dep_map[o][req_k] in all_ops:
                             # Take the existing (resolved) op and overwrite
-                            # this ops dependency to it
-                            # However, the key object is not overwritten - so explicitly delete and update
+                            # this ops dependency to it # However, the key object is not overwritten - so explicitly delete and update
                             # TODO: Is this still necessary?
                             _o = all_ops[dep_map[o][req_k]]
                             del(all_ops[_o])
@@ -131,8 +135,14 @@ class DAG(object):
                             dep_map[o][i] = _o
                             del all_ops[_o]
                             all_ops[_o] = _o
-
                 else:
+                    #req_k = dep_map[o]
+                    #if req_k in all_ops:
+                    #    _o = all_ops[dep_map[o]]
+                    #    dep_map[o] = _o
+                    #    del all_ops[_o]
+                    #    all_ops[_o] = _o
+
                     msg = "Found unsupported Op dependency object %s" % type(o)
                     raise ValueError(msg)
 

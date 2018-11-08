@@ -204,6 +204,34 @@ class TestDSDAGBuild(unittest.TestCase):
         self.assertEqual(t_ratio, 2)
 
 
+    def test_single_op_requires(self):
+        class SingleRequires(OpVertex):
+            def requires(self):
+                return ProvideInt(magic_num=10)
+
+            def run(self, i):
+                return i*10
+
+        dag = SingleRequires().build()
+        res = dag()
+
+        self.assertEqual(res, 100)
+
+    def test_op_parameter_ordering(self):
+        class OpOrderTest(OpVertex):
+            first = BaseParameter(1)
+            second = BaseParameter(2)
+            third = BaseParameter(3)
+
+            def run(self):
+                return self.first + self.second + self.third
+
+        with self.assertRaises(ValueError):
+            dag = OpOrderTest(3, 2, 1).build()
+            res = dag()
+
+            self.assertEqual(res, 6)
+
 class TestParameterTypes(unittest.TestCase):
     def test_datetime_param(self):
         pass
