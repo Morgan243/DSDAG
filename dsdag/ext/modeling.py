@@ -7,7 +7,7 @@ import numpy as np
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.metrics import make_scorer, classification_report
-from sklearn.metrics import f1_score, accuracy_score, precision_score, recall_score, matthews_corrcoef
+from sklearn.metrics import f1_score, accuracy_score, precision_score, recall_score, matthews_corrcoef, roc_auc_score
 from sklearn.metrics import precision_score, recall_score
 from sklearn.model_selection import train_test_split, GridSearchCV
 from imblearn import pipeline as pl
@@ -78,15 +78,29 @@ class BaseBinaryClassifierModel(BaseWrangler):
         accuracy=accuracy_score,
         precision=precision_score,
         recall=recall_score,
-        mathews=matthews_corrcoef
+        mathews=matthews_corrcoef,
+        roc=roc_auc_score
     )
     performance_metric = BaseParameter('f1',
                                        help_msg="One of {"  + ", ".join(sorted(scorer_map.keys())) + "}")
                                        #help_msg="One of {'f1', 'accuracy', 'precision', 'recall', 'mathews'}")
+    performance_metric_kwargs = BaseParameter(dict(average='binary'),
+                                               help_msg="performance metric kwargs")
 
+#    def __init__(self):
+#        self.predictions = None
+#        self.test_predictions = None
+#        self.train_ixes = None
+#        self.test_ixes = None
 
     def run(self, df):
         logger = self.get_logger()
+
+        self.predictions = None
+        self.test_predictions = dict()
+        self.train_ixes = None
+        self.test_ixes = None
+
         if self.features is None:
             #logger.info("No features provided - searching input ops for 'features_provided' attribute")
             #self.features = self.get_input_features()
@@ -129,18 +143,32 @@ class BaseBinaryClassifierModel(BaseWrangler):
 
         s = pd.Series(probas[:, 1], name=self.score_series_name,
                       index=df.set_index(self.comp_key).index if self.comp_key is not None else df.index)
+        self.predictions = s
         return s
 
+    def evaluate(self):
+        logger = self.get_logger()
 
     def train(self, df):
         logger = self.get_logger()
         if self.model_rt is None:
             logger.warn("models are not being saved")
-        train_df, test_df = train_test_split(df,
-                                             stratify=df[self.target],
-                                             test_size=.25)
+
+        #train_df, test_df = train_test_split(df,
+        #                                     stratify=df[self.target],
+        #                                     test_size=.25)
+
+        np.random.seed(42)
+        self.train_ixes, self.test_ixes = train_test_split(df.index,
+                                                           stratify=df[self.target])
+        train_df = df.loc[self.train_ixes]
+        test_df = df.loc[self.test_ixes]
+
         logger.info("Train size: %d, Test size: %d" % (len(train_df), len(test_df)))
         logger.info("Scorer: %s" % self.performance_metric)
+        if self.resample:
+            # Log here so it doesn't log each iteration of the loop
+            logger.info("Using pipelined random over sampler")
 
         models = dict()
         perf_res = dict()
@@ -154,6 +182,7 @@ class BaseBinaryClassifierModel(BaseWrangler):
                 tmp_grid = {"%s__%s" %(m_name, param) : vals
                             for param, vals in mgrid.items()}
             else:
+                m = m()
                 tmp_grid = mgrid
 
             m = self.cv_param_search(m,
@@ -164,6 +193,12 @@ class BaseBinaryClassifierModel(BaseWrangler):
                                      n_jobs=self.n_jobs)
 
             y_pred = m.predict(test_df[self.features])
+            #df.set_index(self.comp_key).index if self.comp_key is not None else df.index
+            self.test_predictions[m_name] = pd.Series(y_pred, #index=self.test_ixes,
+                                                      index=(df.loc[self.test_ixes].set_index(self.comp_key).index
+                                                             if self.comp_key is not None
+                                                             else self.test_ixes),
+                                                      name="%s_test_predictions" % m_name)
             print(m_name)
             self.print_classification_report(test_df[self.target],
                                              y_pred)
@@ -186,8 +221,12 @@ class BaseBinaryClassifierModel(BaseWrangler):
                                 **perf_res[model_type_name])
 
 
-        print("Testing best model (%s)" % str(best_model))
-        scores = self.score(df, best_model)
+        #print("Testing best model (%s)" % str(best_model))
+        #scores = self.score(df, best_model)
+        logger.info("Producing predictions for all models trained")
+        scores = pd.DataFrame({mname: self.score(df, m)
+                               for mname, m in models.items()},
+                              index=df.index)
 
         return models, perf_res, scores
 
@@ -320,7 +359,7 @@ class BaseBinaryClassifierModel(BaseWrangler):
         return model_res, perf_res
 
 
-class DecisionTreeClassifier(BaseBinaryClassifierModel):
+class DecisionTreeModel(BaseBinaryClassifierModel):
         param_search_models =[
         (DecisionTreeClassifier, dict(max_depth=range(2, 23, 2), criterion=['gini', 'entropy'],
                                       min_samples_split=range(2, 20, 1)))]

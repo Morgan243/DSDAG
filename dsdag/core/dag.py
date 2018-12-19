@@ -15,6 +15,20 @@ class DAG(object):
                  pbar=False,
                  live_browse=False,
                  logger=None):
+        """
+        Build a DAG that produces outputs from a set of Ops. After construction, calling the DAG will
+        commence processing and return the required outputs from the relevant Ops.
+
+        :param required_outputs: (OpVertex) Ops whose output is to be returned/materialized
+        :param read_from_cache: (bool) True if Op outputs should be read from the provided cache
+        :param write_to_cache: (bool) True if Op outputs should be written to the provided cache
+        :param cache: (RepoTree) Caching location
+        :param force_downstream_rerun: (bool) True if all dependent outputs should be rerun after an Op is run
+        :param pbar: (bool) Use tqdm progress bar
+        :param live_browse: (bool) Experimental
+        :param logger: (logger or string level) Pass logger level (e.g. 'INFO', 'WARN') to set default level or pass
+                        custom logger
+        """
         if isinstance(logger, basestring):
             #if logger.lower() in ('WARN', 'INFO', 'ERROR', 'DEBUG')
             log_level = logger
@@ -42,6 +56,7 @@ class DAG(object):
         else:
             self.cache = dict()
 
+
         if not isinstance(required_outputs, (list, tuple)):
             self.required_outputs = [required_outputs]
         elif isinstance(required_outputs, tuple):
@@ -53,10 +68,26 @@ class DAG(object):
             msg += "Got %s" % str(type(required_outputs))
             raise ValueError(msg)
 
+        self.lazy_outputs = [ro for ro in self.required_outputs if isinstance(ro, str)]
+        if len(self.lazy_outputs) > 0:
+            self.logger.info("Lazy required outputs found: %s"
+                             % ", ".join(self.lazy_outputs))
+            self.required_outputs = list(set(self.required_outputs) - set(self.lazy_outputs))
+        #else:
+            #self.lazy_outputs = None
+
+
         self.pbar = pbar
 
         self.all_ops, self.dep_map = self.build(self.required_outputs)
         self.name_to_op_map = {o.get_name():o for o in self.all_ops.values()}
+        for lo in self.lazy_outputs:
+            if lo not in self.name_to_op_map:
+                self.logger.error("Lazy Op %s is not resulting build Ops: %s"
+                                    % (lo, "\n".join(self.name_to_op_map.keys())))
+                raise ValueError("Op %s could not be resolved" % lo)
+            self.logger.info("Adding %s to outputs" % lo)
+            self.required_outputs.append(self.name_to_op_map[lo])
 
         self.dep_sets = {p:set(d.values()) if isinstance(d, dict) else set(d)
                          for p, d in self.dep_map.items()}
@@ -96,11 +127,17 @@ class DAG(object):
 
             o._set_dag(self)
             all_ops[o] = o
-            dep_map[o] = o.requires()
+            try:
+                dep_map[o] = o.requires()
+            except:
+                print("Error producing requires for %s" % o.get_name())
+                raise
 
             # requires can return a map (for kwargs) or a list (for args)
             if isinstance(dep_map[o], (list, tuple)):
-                deps_to_resolve += list(dep_map[o])
+                if isinstance(dep_map[o], tuple):
+                    dep_map[o] = list(dep_map[o])
+                deps_to_resolve += dep_map[o]
             elif isinstance(dep_map[o], dict):
                 deps_to_resolve += list(dep_map[o].values())
             else:

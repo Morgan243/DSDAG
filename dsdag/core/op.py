@@ -58,7 +58,7 @@ class OpMeta(type):
                                              optional=getattr(_cls, k).optional)
                                 for k in dct['__ordered_params__'])
 
-        if len(_cls.__parents_params__) > 0:
+        if any(len(_p_names) > 0 for _p_names in _cls.__parents_params__.values()):
             #docs += '\n\n\n------------------\n'
             docs += '\n\n\n[Inherited Parameters]'
         for parent_cls, param_names in _cls.__parents_params__.items():
@@ -237,7 +237,8 @@ class OpVertex(object):
         return self._dag.get_op_input(self)
 
     @classmethod
-    def passthrough_params(cls, dest_cls, cls_name, on_conflict='error', skip_params=None,
+    def passthrough_params(cls, dest_cls, cls_name,
+                           on_conflict='error', skip_params=None,
                            requirement_name=None):
         """
 
@@ -280,7 +281,8 @@ class OpVertex(object):
         return new_cls
 
     @classmethod
-    def passthrough_requirements(cls, skip_params=None, on_conflict='error', **pass_reqs):
+    def passthrough_requirements(cls, skip_params=None,
+                                 on_conflict='error', **pass_reqs):
         """"
         A Pass through requirement inherits it's parent's parameters and constructs a requires method that
         instatiate those requirements and passes the param values through (i.e. passthrough)
@@ -363,9 +365,24 @@ class OpVertex(object):
     def run(self):
         raise NotImplementedError("Implement run")
 
-    def build(self, **dag_kwargs):
+    def build(self,
+              read_from_cache=False,
+              write_to_cache=False,
+              cache=None,
+              force_downstream_rerun=True,
+              pbar=False,
+              live_browse=False,
+              logger=None):
+
         from dsdag.core.dag import DAG
-        return DAG(self, **dag_kwargs)
+        return DAG(required_outputs=self,
+                   read_from_cache=read_from_cache,
+                   write_to_cache=write_to_cache,
+                   cache=cache,
+                   force_downstream_rerun=force_downstream_rerun,
+                   pbar=pbar,
+                   live_browse=live_browse,
+                   logger=logger)
 
     def op_nb_viz(self, op_out, viz_out=None):
         raise NotImplementedError()

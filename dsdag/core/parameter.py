@@ -1,5 +1,6 @@
 import uuid
 import pandas as pd
+from collections import OrderedDict
 
 class _UnsetParameter(object):
     pass
@@ -93,6 +94,13 @@ class UnhashableParameter(BaseParameter):
 
     def value_repr(self):
         return hash(self)
+
+class ParameterCollection(OrderedDict):
+    def __init__(self, cls, *args, **kwargs):
+        # WARNING Can't take kwargs since that will be unordered dict
+        super(ParameterCollection, self).__init__(*args, **kwargs)
+
+
 
 class DatetimeParameter(BaseParameter):
     def encode_value(self, v):
