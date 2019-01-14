@@ -49,6 +49,7 @@ class OpMeta(type):
         dct['__parents_params__'] = parent_params
 
         _cls =  super(OpMeta, cls).__new__(cls, name, parents, dct)
+        original_docs = _cls.__doc__
         docs = _cls.__doc__.strip() if _cls.__doc__ is not None else name
         docs += '\n\n'
         docs += 'Parameters\n'
@@ -74,6 +75,7 @@ class OpMeta(type):
         docs += '\n\n\n'
 
         _cls.__doc__ = docs
+        _cls.__original_doc__ = original_docs
 
         return _cls
 
@@ -393,6 +395,8 @@ class OpVertex(object):
 
         viz_out.append_display_data("op_nb_viz not implemented!")
         return viz_out
+
+
 
 
 ##############
