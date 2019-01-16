@@ -232,6 +232,50 @@ class TestDSDAGBuild(unittest.TestCase):
 
             self.assertEqual(res, 6)
 
+    def test_arg_unpacking(self):
+        class ListReturner(OpVertex):
+            def run(self):
+                return list(range(5))
+
+        class NeedsArgs(OpVertex):
+            def requires(self):
+                op = ListReturner()
+                self.set_unpack_input(op)
+                return op
+
+            def run(self, a1, a2, a3, a4, a5):
+                return a1 + a2 + a3 + a4 + a5
+
+        dag = DAG(NeedsArgs())
+        res = dag()
+        self.assertEqual(res, 10)
+
+    def test_kwarg_unpacking(self):
+        class DictReturner(OpVertex):
+            def run(self):
+                return {k:v for k, v in zip('abc', [1, 2, 3])}
+
+        class NeedsKwargs(OpVertex):
+            def requires(self):
+                op = DictReturner()
+                self.set_unpack_input(op)
+                return op
+
+            def run(self, a, b, c):
+                return a + b + c
+
+        dag = DAG(NeedsKwargs())
+        res = dag()
+        self.assertEqual(res, 6)
+
+    def test_lazy_op(self):
+        # Foo Bar may have been used before, so give custom name to id
+        op = Foo()(Bar(name='bar_test'))
+        dag = DAG(['bar_test', op])
+        bar, foo = dag()
+        self.assertEqual(bar, "Bar")
+        self.assertEqual(foo, "FooBar")
+
 class TestParameterTypes(unittest.TestCase):
     def test_datetime_param(self):
         pass
