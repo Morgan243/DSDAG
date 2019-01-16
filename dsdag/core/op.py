@@ -103,6 +103,8 @@ class OpVertex(object):
         # Filled out during build call
         obj._built = False
         obj.req_hash = None
+        obj._unpack_ops = set()
+        obj.unpack_output = False
 
         obj._dag = None
         obj._user_args = args
@@ -228,6 +230,18 @@ class OpVertex(object):
             l = logging.getLogger()
             l.setLevel(log_level)
         return l
+
+    def set_unpack_input(self, op):
+        self._unpack_ops.add(op)
+        return op
+
+    def unset_unpack_input(self, op):
+        if op in self._unpack_ops:
+            self._unpack_ops.remove(op)
+        return op
+
+    def is_unpack_required(self, op):
+        return op in self._unpack_ops
 
     def get_name(self):
         return self._name if self._name is not None else self.unique_cls_name

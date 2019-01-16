@@ -68,13 +68,12 @@ class DAG(object):
             msg += "Got %s" % str(type(required_outputs))
             raise ValueError(msg)
 
+        self.output_ordering_map = {ro: i for i, ro in enumerate(self.required_outputs)}
         self.lazy_outputs = [ro for ro in self.required_outputs if isinstance(ro, str)]
         if len(self.lazy_outputs) > 0:
             self.logger.info("Lazy required outputs found: %s"
                              % ", ".join(self.lazy_outputs))
             self.required_outputs = list(set(self.required_outputs) - set(self.lazy_outputs))
-        #else:
-            #self.lazy_outputs = None
 
 
         self.pbar = pbar
@@ -83,11 +82,16 @@ class DAG(object):
         self.name_to_op_map = {o.get_name():o for o in self.all_ops.values()}
         for lo in self.lazy_outputs:
             if lo not in self.name_to_op_map:
-                self.logger.error("Lazy Op %s is not resulting build Ops: %s"
+                self.logger.error("Lazy Op %s is not in resulting build Ops: %s"
                                     % (lo, "\n".join(self.name_to_op_map.keys())))
-                raise ValueError("Op %s could not be resolved" % lo)
+                raise ValueError("Lazy Op %s could not be resolved after build" % lo)
+
             self.logger.info("Adding %s to outputs" % lo)
             self.required_outputs.append(self.name_to_op_map[lo])
+            self.output_ordering_map[self.name_to_op_map[lo]] = self.output_ordering_map[lo]
+            del self.output_ordering_map[lo]
+            self.required_outputs = list(sorted(self.required_outputs,
+                                                key=self.output_ordering_map.get))
 
         self.dep_sets = {p:set(d.values()) if isinstance(d, dict) else set(d)
                          for p, d in self.dep_map.items()}
@@ -125,8 +129,12 @@ class DAG(object):
             if any(o == _o for _o in all_ops):
                 continue
 
+            # Give each Op a reference to this DAG
             o._set_dag(self)
+
+            # Ops stored in a dict for easy lookup
             all_ops[o] = o
+
             try:
                 dep_map[o] = o.requires()
             except:
@@ -228,12 +236,12 @@ class DAG(object):
                     self.browse()
                 process_cls_name = process.__class__.__name__
                 process_friendly_name = process.get_name()
-                process_repr = repr(process)
                 if self.pbar:
                     self.tqdm_bar.set_description(process_friendly_name)
                 else:
                     self.logger.info(process_friendly_name)
 
+                # May be a list of dependencies (*args) or a dict (**kwargs)
                 dependencies = self.dep_map.get(process, dict())
                 dep_values = dependencies.values() if isinstance(dependencies, dict) else dependencies
 
@@ -251,7 +259,8 @@ class DAG(object):
                                          % (tpid, process_cls_name))
                     self.outputs[process] = self.cache[process_cls_name]
                 else:
-                    kwargs = dict()
+                    proc_args = list()
+                    proc_kwargs = dict()
                     if isinstance(dependencies, dict):
                         for k, v in dependencies.items():
                             if v not in self.outputs:
@@ -261,14 +270,16 @@ class DAG(object):
                                 return -1
                             if isinstance(self.outputs[v], idt.RepoLeaf):
                                 self.outputs[v] = self.outputs[v].load()
-                            kwargs[k] = self.outputs[v]
 
-                        computed.add(process_cls_name)
-                        self.exec_process(process=process,
-                                          proc_exec_kwargs=kwargs,
-                                          tpid=tpid)
+                            if process.is_unpack_required(v) or v.unpack_output:
+                                if isinstance(self.outputs[v], dict):
+                                    proc_kwargs.update(self.outputs[v])
+                                else:
+                                    proc_args += list(self.outputs[v])
+                            else:
+                                proc_kwargs[k] = self.outputs[v]
+
                     elif isinstance(dependencies, list):
-                        proc_args = list()
                         for _i, v in enumerate(dependencies):
                             if v not in self.outputs:
                                 msg = "The process %s has a missing dependency:" % process_cls_name
@@ -277,14 +288,21 @@ class DAG(object):
                                 return -1
                             if isinstance(self.outputs[v], idt.RepoLeaf):
                                 self.outputs[v] = self.outputs[v].load()
-                            #kwargs[k] = self.outputs[v]
-                            proc_args.append(self.outputs[v])
 
-                        computed.add(process_cls_name)
-                        self.exec_process(process=process,
-                                          proc_args=proc_args,
-                                          #proc_exec_kwargs=kwargs,
-                                          tpid=tpid)
+                            if process.is_unpack_required(v) or v.unpack_output:
+                                if isinstance(self.outputs[v], dict):
+                                    proc_kwargs.update(self.outputs[v])
+                                else:
+                                    proc_args += list(self.outputs[v])
+                            else:
+                                proc_args.append(self.outputs[v])
+
+                    self.exec_process(process=process,
+                                      proc_args=proc_args,
+                                      proc_exec_kwargs=proc_kwargs,
+                                      tpid=tpid)
+                    computed.add(process_cls_name)
+
                 if self.pbar:
                     self.tqdm_bar.update(1)
 
@@ -316,7 +334,7 @@ class DAG(object):
                     self.cache.save(self.outputs[process],
                                         name=process_cls_name,
                                         author='dag',
-                                        param_names=list(kwargs.keys()),
+                                        param_names=list(proc_kwargs.keys()),
                                         auto_overwrite=True)
 
         if self.pbar:
