@@ -663,3 +663,81 @@ class BaseBinaryClassifierModel_old(BaseWrangler):
             model_res[m_name] = m
 
         return model_res, perf_res
+
+
+class TorchLogit(OpVertex):
+    target = BaseParameter(help_msg='String column name of the target df column')
+    features = BaseParameter(None, help_msg='List of string column names of the feature columns'
+                                            'If None, all columns minus target are used')
+    n_epochs = BaseParameter(1)
+    batch_size = BaseParameter(128)
+    learning_rate = BaseParameter(1e-5)
+
+    @staticmethod
+    def log_loss(actual, pred):
+        import torch
+        return torch.log(1 + torch.exp(-actual * pred)).mean()
+
+    @staticmethod
+    def batch_gen(feat_arr, target_arr, batch_size):
+        ix = list(range(feat_arr.shape[0]))
+        np.random.shuffle(ix)
+        #field_nums = feature_field_nums + [target_field_num]
+        def batch_gen():
+            done, i = False, 0
+            while not done:
+                if i > (len(ix) - batch_size):
+                    ixes, i = ix[i:], 0
+                    done = True
+                else:
+                    ixes = ix[i:i + batch_size]
+                    i = i + batch_size
+
+                X = feat_arr[ixes]
+                y = target_arr[ixes]
+                yield X.astype(float), y.astype(float)
+        return batch_gen()
+
+    def run(self, df):
+        import torch
+        from tqdm import tqdm_notebook
+        feats = df.columns.tolist() if self.features is None else self.features
+        n_features = len(feats)
+        self.model = torch.nn.Sequential(
+            torch.nn.Linear(n_features, 1)
+        )
+        opt = torch.optim.SGD(self.model.parameters(),
+                              lr=self.learning_rate)
+        training_metrics = list()
+        for n in range(self.n_epochs):
+            g = self.batch_gen(df[feats].values,
+                               df[self.target].values,
+                               batch_size=128)
+            loss_total = 0
+            for i, (x, y) in tqdm_notebook(enumerate(g),
+                                           total=np.ceil(len(df)/self.batch_size)):
+                # x, y = next(g)
+                x = torch.tensor(x).float()
+                y = torch.tensor(y).reshape(-1, 1).float()
+                y = (y * 2) - 1
+
+                # Forward pass: compute predicted y
+                y_pred = self.model(x)
+                loss = self.log_loss(y_pred.float(), y)
+                loss_total += loss
+                training_metrics.append(dict(epoch=n,
+                                             step=i,
+                                             loss=loss.item()))
+                opt.zero_grad()
+                loss.backward()
+                opt.step()
+            #print(training_metrics[-5:])
+
+            print("Loss: %f" % (loss_total/float(i+1)))
+        _p = list(self.model.parameters())
+        coefs_s = pd.Series(_p[0][0].detach().numpy(),
+                            index=feats)
+        training_mets_df = pd.DataFrame(training_metrics)
+        return coefs_s, training_mets_df
+
+
