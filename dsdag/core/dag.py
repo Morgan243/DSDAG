@@ -30,14 +30,13 @@ class DAG(object):
                         custom logger
         """
         if isinstance(logger, basestring):
-            #if logger.lower() in ('WARN', 'INFO', 'ERROR', 'DEBUG')
             log_level = logger
             logger = None
         else:
             log_level = DAG._default_log_level
 
         if logger is None:
-            logger = logging.getLogger()
+            logger = logging.getLogger(name='DSDAG')
             logger.setLevel(log_level)
         self.logger = logger
         ####
@@ -98,6 +97,8 @@ class DAG(object):
         self.topology = list(toposort(self.dep_sets))
 
         self.outputs = dict()
+        self.dag_start_time = None
+        self.system_utilization = dict()
         self.start_and_finish_times = dict()
         self.all_requirements = [d for t in self.topology for d in t]
         self.completed_ops = dict()
@@ -110,6 +111,13 @@ class DAG(object):
 
     def _ipython_key_completions_(self):
         return list(self.name_to_op_map.keys())
+
+    def _record_utilization(self):
+        import os
+        import psutil
+        process = psutil.Process(os.getpid())
+        t = time.time()
+        self.system_utilization[t] = process.memory_info().rss
 
     def build(self, required_outputs):
         if not isinstance(required_outputs, list):
@@ -202,6 +210,7 @@ class DAG(object):
         if not self.pbar:
             self.logger.info("%s Executing %s" % (tpid, process.__class__.__name__))
 
+        self._record_utilization()
         start_t = time.time()
         if proc_exec_kwargs is None and proc_args is None:
             self.outputs[process] = p.run()
@@ -213,6 +222,7 @@ class DAG(object):
             self.outputs[process] = p.run(*proc_args, **proc_exec_kwargs)
 
         finish_t = time.time()
+        self._record_utilization()
         self.start_and_finish_times[process] = (start_t, finish_t)
 
         if not self.pbar:
@@ -222,6 +232,7 @@ class DAG(object):
         self.completed_ops[p.get_name()] = p
 
     def run_dag(self):
+        self.dag_start_time = time.time()
         computed = set()
         if self.pbar:
             from tqdm import tqdm
@@ -446,3 +457,13 @@ class DAG(object):
         else:
             out_widget = tab
         display(out_widget)
+
+
+    def timings(self):
+        """
+        Returns a Pandas series of the Op latencies in seconds
+        """
+        op_lat_map = {op.get_name(): end_t - start_t
+                      for op, (start_t, end_t) in self.start_and_finish_times.items()}
+        op_latency_s = pd.Series(op_lat_map, name='op_latency').sort_values(ascending=False)
+        return op_latency_s
