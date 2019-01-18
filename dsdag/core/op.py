@@ -8,7 +8,7 @@ import time
 import logging
 import pandas as pd
 
-from parameter import BaseParameter, UnhashableParameter
+from dsdag.core.parameter import BaseParameter, UnhashableParameter
 import collections
 
 def make_param_doc_str(param_name, param_help, wrap_len=80,
