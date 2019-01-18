@@ -1,3 +1,3 @@
-import op
-import dag
-import parameter
+import dsdag.core.op
+import dsdag.core.dag
+import dsdag.core.parameter

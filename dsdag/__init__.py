@@ -1,2 +1,2 @@
-import core
-import ext
+import dsdag.core
+import dsdag.ext
