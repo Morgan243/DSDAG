@@ -36,6 +36,458 @@ class BaseWrangler(OpVertex):
         return feature_map
 
 
+from sklearn import tree
+import pydot
+import collections
+class DT_Explain():
+    @staticmethod
+    def visualize_tree(dt, features, path=None,
+                       image_output_path=None):
+        from IPython.display import Image
+        # Visualize data
+        dot_data = tree.export_graphviz(dt,
+                                        feature_names=features,
+                                        out_file=None,
+                                        filled=True,
+                                        rounded=True, node_ids=True)
+        graph = pydot.graph_from_dot_data(dot_data)[0]
+
+        colors = ('blue', 'orange')
+        edges = collections.defaultdict(list)
+
+        for edge in graph.get_edge_list():
+            edges[edge.get_source()].append(int(edge.get_destination()))
+
+        for edge in edges:
+            # coloring parent nodes
+            if path is not None:
+                if int(edge) in path:
+                    graph.get_node(edge)[0].set_fillcolor('red')
+                else:
+                    graph.get_node(edge)[0].set_fillcolor('white')
+
+            # finding all children, step needed to color final nodes in the tree
+            for i in range(2):
+                child = str(edges[edge][i])
+                if path is not None:
+                    if int(child) in path:
+                        graph.get_node(child)[0].set_fillcolor('red')
+                    else:
+                        graph.get_node(child)[0].set_fillcolor('white')
+
+        output_path = 'tree.png' if image_output_path is None else image_output_path
+        graph.write_png(output_path)
+        return Image(output_path)
+
+    @staticmethod
+    def rev_path(tr, node_id):
+        matching = [(i, 'left') if l == node_id else (i, 'right')
+                    for i, (l, r) in enumerate(zip(tr.children_left, tr.children_right))
+                    if l == node_id or r == node_id]
+        if node_id == 0:
+            return []
+
+        assert len(matching) == 1
+        parent_pair = matching[0]
+
+        return DT_Explain.rev_path(tr, parent_pair[0]) + [parent_pair]
+
+    @staticmethod
+    def print_node_path(tr, node_id, features,
+                        rescale=None, transform_map=None):
+        if transform_map is None:
+            transform_map = dict()
+
+        t_p = DT_Explain.rev_path(tr, node_id)
+        t_p.append((node_id, None))
+
+        path_data = list()
+        for nid, direction in t_p:
+            f = tr.feature[nid]
+            ineq_str = dict(left='<=', right='>').get(direction, None)
+
+            if tr._tree.TREE_UNDEFINED == f:
+                fname = None
+                thresh = None
+                mtype = None
+                orig_thresh = None
+            else:
+                fname = features[f]
+                thresh = tr.threshold[nid]
+
+                mtype = transform_map.get(fname, 'unknown')
+
+                orig_thresh = thresh
+                if rescale is not None:
+                    _t = rescale(fname, thresh, transform_type=mtype)
+                    thresh = _t if _t is not None else thresh
+
+            _d = dict(node_id=nid, treatment=mtype, feature_name=fname, inequality=ineq_str, threshold=thresh,
+                      orig_thresh=orig_thresh)
+            # Left means '<='
+            if ineq_str is not None:
+                split_str = "[%d] (%s) %s %s %.3f" % (nid, mtype, fname, ineq_str, thresh)
+                if orig_thresh != thresh:
+                    split_str += ' (with scaling = %.3f)' % orig_thresh
+                vals = tr.value[nid][0]
+                _d['class_0_n'] = vals[0]
+                _d['class_1_n'] = vals[1]
+            else:
+                vals = tr.value[node_id][0]
+                _d['class_0_n'] = vals[0]
+                _d['class_1_n'] = vals[1]
+
+                _d['inequality'] = '<=' if vals[1] > vals[0] else '>'
+
+                class_counts = "%d, %d" % (vals[0], vals[1])
+                samples = sum(vals)
+                imp = tr.impurity[node_id]
+                str_params = dict(n_samples=samples, class_counts=class_counts, impurity=imp)
+                scoring_str = "- N Samples: {n_samples}\n- Class Counts: {class_counts}\n- Impurity: {impurity}"
+
+                split_str = "[%d]" % nid
+                if fname is None:
+                    split_str += ' Leaf'
+                split_str += "\n" + scoring_str.format(**str_params)
+            path_data.append(_d)
+            print(split_str)
+        path_df = pd.DataFrame(path_data)
+        path_df.index.name = 'path_step'
+
+        path_df['n_samples'] = path_df['class_0_n'] + path_df['class_1_n']
+        return path_df
+
+    @staticmethod
+    def get_node_mask(df, tr, node_id,
+                      features=None,
+                      rescale=None, transform_map=None,
+                      **ufuncs):
+        if transform_map is None:
+            transform_map = dict()
+
+        if features is None:
+            features = df.columns.tolist()
+
+        t_p = DT_Explain.rev_path(tr, node_id)
+        t_p.append((node_id, None))
+
+        # Default mask is all True
+        mask = pd.Series(True, df.index)
+
+        mask_iter_res = list()
+        for nid, direction in t_p:
+            f = tr.feature[nid]
+            fname = features[f]
+            thresh = tr.threshold[nid]
+            mtype = transform_map.get(fname, 'extracted')
+
+            vals = tr.value[nid][0]
+            is_leaf = True if (tr.children_left[nid] < 0) and (tr.children_right[nid] < 0) else False
+
+            if rescale is not None:
+                rescaled_thresh = rescale(fname, thresh, transform_type=mtype)
+            else:
+                rescaled_thresh = None
+
+            if direction is None and not is_leaf:
+                # If here, it means we are on a selected node (direction == None)
+                #  so we assume the node's True filter is applied (True is always left in Sklearn DT)
+                direction = 'left'
+            elif is_leaf:
+                direction = None
+
+            if direction == 'left':
+                mask &= df[fname] <= thresh
+                ineq_str = '<='
+            elif direction == 'right':
+                mask &= df[fname] > thresh
+                ineq_str = '>'
+            else:
+                ineq_str = 'leaf'
+
+            _d = dict(node_id=nid,
+                      feature_name=fname if not is_leaf else None,
+                      threshold=thresh if not is_leaf else None,
+                      threshold_before_treatment=rescaled_thresh,
+                      inequality=ineq_str,
+                      treatment_type=mtype if not is_leaf else None,
+                      n_selected=mask.sum(),
+                      portion_selected=mask.mean())
+            _d.update({k: func(df[mask]) for k, func in ufuncs.items()})
+            mask_iter_res.append(_d)
+
+        return mask, pd.DataFrame(mask_iter_res).set_index('node_id')
+
+    ###-----
+    @staticmethod
+    def target_sample_ratios_from_tree(mtree):
+        node_proportion_s = pd.Series(mtree.tree_.value[:, 0, 1] / mtree.tree_.value[:, 0, 0]).sort_values(ascending=False)
+        node_proportion_s.index.name = 'node_id'
+        return node_proportion_s
+
+    @staticmethod
+    def inspect_dt_model(feat_df, model_leaf, test_top_n=7):
+        import ipywidgets as widgets
+        from IPython.display import display
+        tree_feats = model_leaf.md['features']
+        mtree = model_leaf.load()
+
+        node_proportion_s = DT_Explain.target_sample_ratios_from_tree(mtree)
+
+        nid_to_mask_map = {_nid: DT_Explain.get_node_mask(feat_df, mtree.tree_, _nid, features=tree_feats)[0]
+                           for _nid in node_proportion_s.head(test_top_n).index}
+
+        test_rate_df = pd.DataFrame([dict(node_id=_nid, n_samples=m.sum(), sample_proportion=m.mean(),
+                                          target_rate=feat_df[m]['is_opportunity'].mean())
+                                     for _nid, m in nid_to_mask_map.items()]).set_index('node_id')
+        test_rate_df.sort_values(['target_rate', 'n_samples'], inplace=True, ascending=False)
+
+        tree_viz = DT_Explain.visualize_tree(mtree, tree_feats)
+
+        # return widgets.HBox([best_node_out, tree_viz_out, df_out])
+        # return best_node_out, tree_viz_out, df_out
+        # return tree_viz
+
+        df_out = widgets.Output(layout=widgets.Layout(width='1500px'))
+        tree_out = widgets.Output(layout=widgets.Layout(width='3700px'))
+
+        df_out.append_display_data(test_rate_df.round(4))
+        param_str = "\n".join("%s=%s" % (k, v) for k, v in mtree.get_params().items()
+                              if v is not None and k not in ('presort', 'splitter',
+                                                             'min_imprutity_decrease',
+                                                             'min_weight_fraction_leaf',
+                                                             'min_impurity_decrease'))
+        with df_out:
+            # display(param_str)
+            print(param_str)
+        # df_out.append_display_data(param_str)
+
+        tree_out.append_display_data(tree_viz)
+        display(widgets.HBox([df_out, tree_out]))
+        # display(tree_viz)
+        # display(test_rate_df)
+
+    @staticmethod
+    def inspect_dt_node(feat_df, model_leaf, node_id, rescale=None, transform_map=None,
+                        **ufuncs):
+        tree_feats = model_leaf.md['features']
+        mtree = model_leaf.load()
+
+        mask, mask_df = DT_Explain.get_node_mask(feat_df, mtree.tree_, node_id,
+                                                 features=tree_feats, rescale=rescale,
+                                                 transform_map=transform_map,
+                                                 **ufuncs)
+                                                 #target_rate=lambda _df: _df['is_opportunity'].mean())
+        # print("Computed mask DF %d" % node_sel_w.value)
+        col_ordering = ['feature_name',
+                        'inequality',
+                        'threshold_before_treatment',
+                        'threshold',
+                        'n_selected',
+                        #'opportunity_rate',
+                        'portion_selected',
+                        'treatment_type'
+                        ] + list(ufuncs.keys())
+        return mask_df[col_ordering]
+
+class BoostedBinaryClassifier(BaseWrangler):
+    model_class = BaseParameter(DecisionTreeClassifier)
+    model_param_grid = BaseParameter(dict(max_depth=range(2, 23, 2), criterion=['gini', 'entropy'],
+                                      min_samples_split=range(2, 20, 1)))
+    target = BaseParameter(None, help_msg='String column name of the target df column')
+    features = BaseParameter(None, help_msg='List of string column names of the feature columns'
+                                            'If None, all columns minus target are used')
+    n_jobs = BaseParameter(8, help_msg='Number of processes to use with Joblib in sklearn GridSearch')
+    resample = BaseParameter(True, help_msg="Whether to use imblearn's random rebalancing")
+    train_mode = BaseParameter(True, help_msg="Set False to use what model???")
+    scorer_map = dict(
+        f1=f1_score,
+        accuracy=accuracy_score,
+        precision=precision_score,
+        recall=recall_score,
+        mathews=matthews_corrcoef,
+        roc=roc_auc_score
+    )
+    model_name = BaseParameter("binary_classifier_%s" % str(uuid.uuid4()).replace('-', '_'))
+    model_rt = UnhashableParameter(None)
+    performance_metric = BaseParameter('f1',
+                                       help_msg="One of {"  + ", ".join(sorted(scorer_map.keys())) + "}")
+                                       #help_msg="One of {'f1', 'accuracy', 'precision', 'recall', 'mathews'}")
+    performance_metric_kwargs = BaseParameter(dict(average='binary'),
+                                               help_msg="performance metric kwargs")
+    comp_key = BaseParameter(None, "Set the key/index for output scores and other metrics")
+    scoring_model_name = BaseParameter(None)
+    score_series_name = BaseParameter('proba')
+    return_model = BaseParameter(False, help_msg="Return the model rather than results")
+
+    def run(self, df, features=None, target=None):
+        if features is None and self.features is None:
+            msg = "Either the Op parameter 'features' must be set or it must be passed to Op's run"
+            raise ValueError(msg)
+        if target is None and self.target is None:
+            msg = "Either the Op parameter 'target' must be set or it must be passed to Op's run"
+            raise ValueError(msg)
+
+        logger = self.get_logger()
+
+        self.features = features if features is not None else self.features
+        self.target = target if target is not None else self.target
+
+        self.predictions = None
+        self.test_predictions = dict()
+        self.train_ixes = None
+        self.test_ixes = None
+
+        if self.features is None:
+            #logger.info("No features provided - searching input ops for 'features_provided' attribute")
+            #self.features = self.get_input_features()
+            logger.info("No features provided - using all but target as features")
+            self.features = df.columns.drop(self.target).tolist()
+
+        logger.info("Number of features: %d" % len(self.features))
+
+        if self.train_mode:
+            logger.info("Training")
+            self.model = None
+            ret = self.train(df)
+        else:
+            logger.info("Scoring")
+            ret = self.score(df)
+
+        if self.return_model:
+            ret = self.model
+
+        return ret
+
+    def train(self, df):
+        logger = self.get_logger()
+        if self.model_rt is None:
+            logger.warn("models are not being saved")
+
+        np.random.seed(42)
+        self.train_ixes, self.test_ixes = train_test_split(df.index,
+                                                           stratify=df[self.target])
+        train_df = df.loc[self.train_ixes]
+        test_df = df.loc[self.test_ixes]
+
+        logger.info("Train size: %d, Test size: %d" % (len(train_df), len(test_df)))
+        logger.info("Scorer: %s" % self.performance_metric)
+        if self.resample:
+            # Log here so it doesn't log each iteration of the loop
+            logger.info("Using pipelined random over sampler")
+
+        models = dict()
+        perf_res = dict()
+        best_model, best_model_metric = None, -np.inf
+        #for m, mgrid in self.param_search_models:
+
+        m_name = self.model_class.__name__
+
+        if self.resample:
+            resampler = os.RandomOverSampler
+            m = pl.Pipeline([('resampler', resampler()),
+                             (m_name, self.model_class())])
+            tmp_grid = {"%s__%s" % (m_name, param): vals
+                        for param, vals in self.model_param_grid.items()}
+        else:
+            m = self.model_class()
+            tmp_grid = self.model_param_grid
+
+        m = self.cv_param_search(m,
+                                 train_df[self.features],
+                                 train_df[self.target],
+                                 tmp_grid,
+                                 scorer=self.performance_metric,
+                                 n_jobs=self.n_jobs)
+
+        y_pred = m.predict(test_df[self.features])
+        self.test_predictions[m_name] = pd.Series(y_pred,  # index=self.test_ixes,
+                                                  index=(df.loc[self.test_ixes].set_index(self.comp_key).index
+                                                         if self.comp_key is not None
+                                                         else self.test_ixes),
+                                                  name="%s_test_predictions" % m_name)
+        print(m_name)
+        self.print_classification_report(test_df[self.target],
+                                         y_pred)
+        test_performance = self.performance(test_df[self.target],
+                                            y_pred)
+        #perf_res[m_name] = self.performance(test_df[self.target],
+        #                                    y_pred)
+        #models[m_name] = m
+
+        if self.model_rt is not None:
+            save_name = self.model_name + "_" + m_name
+            # TODO: Don't overwrite with worse performing model?
+            self.model_rt.save(m, save_name,
+                               author='pipeline',
+                               auto_overwrite=True,
+                               **test_performance)
+
+        # print("Testing best model (%s)" % str(best_model))
+        logger.info("Producing predictions for all models trained")
+        scores = self.score(df, m)
+
+        return m, test_performance, scores
+
+    def score(self, df, model=None):
+        # TODO: select best
+        #model_df = self.asr_model_features(df)
+        logger = self.get_logger()
+        if model is None:
+            if self.scoring_model_name is None:
+                g = (l for l in self.model_rt.iterleaves(progress_bar=False)
+                            if self.name in l.name and self.performance_metric in l.read_metadata())
+                m_leaf = max(g, key=lambda l: l.md[self.performance_metric])
+            elif self.scoring_model_name in self.model_rt:
+                m_leaf = self.model_rt[self.scoring_model_name]
+            else:
+                msg = "Value of parameter scoring_model_name is not in tree %s" % str(self.model_rt)
+                raise ValueError(msg)
+
+            logger.info("Using %s " % m_leaf.name)
+            model = m_leaf.load()
+        probas = model.predict_proba(df[self.features])
+
+        s = pd.Series(probas[:, 1], name=self.score_series_name,
+                      index=df.set_index(self.comp_key).index if self.comp_key is not None else df.index)
+        self.predictions = s
+        return s
+
+    @staticmethod
+    def print_classification_report(y_true, y_pred,
+                                    **kwargs):
+        print classification_report(y_true, y_pred,
+                                    **kwargs)
+
+    @staticmethod
+    def performance(y_true, y_pred):
+       return dict(
+                accuracy=accuracy_score(y_true, y_pred),
+                f1=f1_score(y_true, y_pred),
+                precision=precision_score(y_true, y_pred),
+                recall=recall_score(y_true, y_pred),
+            )
+
+    @staticmethod
+    def cv_param_search(model, X, y,
+                        param_grid,
+                        scorer='f1', verbose=1,
+                        n_jobs=4):
+        try:
+            _scorer = BaseBinaryClassifierModel.scorer_map[scorer]
+        except KeyError:
+            msg = ("Scorer %s is not supported, use one of {%s}"
+                  % (scorer, ", ".join(BaseBinaryClassifierModel.scorer_map.keys())))
+            print(msg)
+            raise
+
+        cv = GridSearchCV(estimator=model, param_grid=param_grid,
+                          scoring=make_scorer(_scorer),
+                          verbose=verbose, n_jobs=n_jobs,
+                          pre_dispatch=n_jobs)
+        cv_res = cv.fit(X, y)
+        return cv_res
+
 class BaseBinaryClassifierModel(BaseWrangler):
     baseline_models = [(DecisionTreeClassifier, dict()),
                        (RandomForestClassifier,dict()),
@@ -134,7 +586,7 @@ class BaseBinaryClassifierModel(BaseWrangler):
             elif self.scoring_model_name in self.model_rt:
                 m_leaf = self.model_rt[self.scoring_model_name]
             else:
-                msg = "Value of parameter scoring_model_name is not in tree %s" % str(self.siu_rt)
+                msg = "Value of parameter scoring_model_name is not in tree %s" % str(self.model_rt)
                 raise ValueError(msg)
 
             logger.info("Using %s " % m_leaf.name)
