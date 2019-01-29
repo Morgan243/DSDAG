@@ -467,3 +467,40 @@ class DAG(object):
                       for op, (start_t, end_t) in self.start_and_finish_times.items()}
         op_latency_s = pd.Series(op_lat_map, name='op_latency').sort_values(ascending=False)
         return op_latency_s
+
+    def plot(self):
+        import matplotlib
+        import matplotlib.dates as mdates
+        sys_s = pd.Series(self.system_utilization)
+        sys_s.index = pd.to_datetime(sys_s.index, unit='s')
+        sys_s = sys_s / (1024. ** 2)
+
+        height = 0.20 * len(self.start_and_finish_times.keys())
+        fig, ax = matplotlib.pyplot.subplots(figsize=(16, height))
+        # gd.configure_imports(matplotlib_style='default')
+
+        ax2 = ax.twinx()
+        ax2 = sys_s.rename("Memory").plot(ax=ax2, legend=True)
+        ax2.set_ylabel("Memory Usage (MB)", fontsize=15)
+        ax2.grid(False)
+
+        names = list()
+        # ylim = ax.get_ylim()
+
+        sorted_iter = sorted(self.start_and_finish_times.keys(),
+                             key=lambda v: self.start_and_finish_times[v][0])
+
+        for i, _op in enumerate(sorted_iter):
+            start_t, stop_t = self.start_and_finish_times[_op]
+
+            start_t_s = mdates.date2num(pd.to_datetime(start_t, unit='s'))
+            stop_t_s = mdates.date2num(pd.to_datetime(stop_t, unit='s'))
+            ax.barh(i, stop_t_s - start_t_s, left=start_t_s,
+                    height=.5, align='center')
+            names.append(_op.get_name())
+
+        ax.set(yticks=range(len(names)), yticklabels=names)
+        ax.set_xlabel('Time', fontsize=15)
+        ax.tick_params(labelsize=13)
+        ax.grid(True)
+        fig.tight_layout()
