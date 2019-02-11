@@ -1,6 +1,6 @@
 import uuid
 from dsdag.core.op import OpVertex
-from dsdag.core.parameter import BaseParameter, DatetimeParameter, UnhashableParameter
+from dsdag.core.parameter import BaseParameter, DatetimeParameter, UnhashableParameter, RepoTreeParameter
 import pandas as pd
 import numpy as np
 
@@ -184,7 +184,7 @@ class DT_Explain():
             vals = tr.value[nid][0]
             is_leaf = True if (tr.children_left[nid] < 0) and (tr.children_right[nid] < 0) else False
 
-            if rescale is not None:
+            if rescale is not None and not is_leaf:
                 rescaled_thresh = rescale(fname, thresh, transform_type=mtype)
             else:
                 rescaled_thresh = None
@@ -292,8 +292,9 @@ class DT_Explain():
 
 class BoostedBinaryClassifier(BaseWrangler):
     model_class = BaseParameter(DecisionTreeClassifier)
-    model_param_grid = BaseParameter(dict(max_depth=range(2, 23, 2), criterion=['gini', 'entropy'],
-                                      min_samples_split=range(2, 20, 1)))
+    model_param_grid = BaseParameter(None)
+    #model_param_grid = BaseParameter(dict(max_depth=range(2, 23, 2), criterion=['gini', 'entropy'],
+    #                                  min_samples_split=range(2, 20, 1)))
     target = BaseParameter(None, help_msg='String column name of the target df column')
     features = BaseParameter(None, help_msg='List of string column names of the feature columns'
                                             'If None, all columns minus target are used')
@@ -309,6 +310,7 @@ class BoostedBinaryClassifier(BaseWrangler):
         roc=roc_auc_score
     )
     model_name = BaseParameter("binary_classifier_%s" % str(uuid.uuid4()).replace('-', '_'))
+    #model_rt = RepoTreeParameter(None)#UnhashableParameter(None)
     model_rt = UnhashableParameter(None)
     performance_metric = BaseParameter('f1',
                                        help_msg="One of {"  + ", ".join(sorted(scorer_map.keys())) + "}")
@@ -319,6 +321,9 @@ class BoostedBinaryClassifier(BaseWrangler):
     scoring_model_name = BaseParameter(None)
     score_series_name = BaseParameter('proba')
     return_model = BaseParameter(False, help_msg="Return the model rather than results")
+
+    def _node_color(self):
+        return '#fc6220'
 
     def run(self, df, features=None, target=None):
         if features is None and self.features is None:
@@ -376,29 +381,28 @@ class BoostedBinaryClassifier(BaseWrangler):
             # Log here so it doesn't log each iteration of the loop
             logger.info("Using pipelined random over sampler")
 
-        models = dict()
-        perf_res = dict()
-        best_model, best_model_metric = None, -np.inf
-        #for m, mgrid in self.param_search_models:
-
         m_name = self.model_class.__name__
 
         if self.resample:
             resampler = os.RandomOverSampler
             m = pl.Pipeline([('resampler', resampler()),
                              (m_name, self.model_class())])
-            tmp_grid = {"%s__%s" % (m_name, param): vals
-                        for param, vals in self.model_param_grid.items()}
+            if self.model_param_grid is not None:
+                tmp_grid = {"%s__%s" % (m_name, param): vals
+                            for param, vals in self.model_param_grid.items()}
         else:
             m = self.model_class()
             tmp_grid = self.model_param_grid
 
-        m = self.cv_param_search(m,
-                                 train_df[self.features],
-                                 train_df[self.target],
-                                 tmp_grid,
-                                 scorer=self.performance_metric,
-                                 n_jobs=self.n_jobs)
+        if self.model_param_grid is not None:
+            m = self.cv_param_search(m,
+                                     train_df[self.features],
+                                     train_df[self.target],
+                                     tmp_grid,
+                                     scorer=self.performance_metric,
+                                     n_jobs=self.n_jobs)
+        else:
+            m = m.fit(train_df[self.features], train_df[self.target])
 
         y_pred = m.predict(test_df[self.features])
         self.test_predictions[m_name] = pd.Series(y_pred,  # index=self.test_ixes,
@@ -411,9 +415,6 @@ class BoostedBinaryClassifier(BaseWrangler):
                                          y_pred)
         test_performance = self.performance(test_df[self.target],
                                             y_pred)
-        #perf_res[m_name] = self.performance(test_df[self.target],
-        #                                    y_pred)
-        #models[m_name] = m
 
         if self.model_rt is not None:
             save_name = self.model_name + "_" + m_name
