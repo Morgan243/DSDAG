@@ -41,7 +41,7 @@ class SQL(OpVertex):
         if self.wrap_as is not None:
             return "(%s) AS %s" % (q, self.wrap_as)
         else:
-            return self.wrap_as
+            return q
 
     def _repr_html_(self):
         q = self.q
