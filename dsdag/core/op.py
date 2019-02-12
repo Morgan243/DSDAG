@@ -114,21 +114,21 @@ class OpVertex(object):
         obj._user_kwargs = kwargs
         obj._parameters = obj.scan_for_op_parameters(overrides=obj._user_kwargs)
         obj._name = kwargs.get('name', None)
-        if obj._name is not None:
-            name_iid = obj.__class__._given_name_cnt_map.get(obj._name, 0)
-            new_name = obj._name
-            if name_iid > 0:
-                new_name = obj._name + '_' + str(name_iid)
-            obj.__class__._given_name_cnt_map[obj._name] = name_iid + 1
-            obj._name = new_name
+        #if obj._name is not None:
+        #    name_iid = obj.__class__._given_name_cnt_map.get(obj._name, 0)
+        #    new_name = obj._name
+        #    if name_iid > 0:
+        #        new_name = obj._name + '_' + str(name_iid)
+        #    obj.__class__._given_name_cnt_map[obj._name] = name_iid + 1
+        #    obj._name = new_name
 
-        obj.unique_cls_name = str(obj.__class__.__name__)
-        iid = obj.__class__._instance_id_map.get(obj.unique_cls_name)
-        if iid is not None:
-            obj.__class__._instance_id_map[obj.unique_cls_name] += 1
-            obj.unique_cls_name += '_%s' % str(iid)
-        else:
-            obj.__class__._instance_id_map[obj.unique_cls_name] = 1
+        #obj.unique_cls_name = str(obj.__class__.__name__)
+        #iid = obj.__class__._instance_id_map.get(obj.unique_cls_name)
+        #if iid is not None:
+        #    obj.__class__._instance_id_map[obj.unique_cls_name] += 1
+        #    obj.unique_cls_name += '_%s' % str(iid)
+        #else:
+        #    obj.__class__._instance_id_map[obj.unique_cls_name] = 1
 
         for p_n, p, in obj._parameters.items():
             setattr(obj, p_n, p.value)
@@ -243,8 +243,12 @@ class OpVertex(object):
     def is_unpack_required(self, op):
         return op in self._unpack_ops
 
+    def set_name(self, name):
+        self._name = name
+
     def get_name(self):
-        return self._name if self._name is not None else self.unique_cls_name
+        #return self._name if self._name is not None else self.unique_cls_name
+        return self._name if self._name is not None else self.__class__.__name__
 
     def set_cacheable(self, is_cacheable):
         self._cacheable = is_cacheable

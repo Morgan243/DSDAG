@@ -4,6 +4,7 @@ import time
 from toposort import toposort
 import pandas as pd #TODO: this dep should not be in core dag
 from dsdag.core.op import OpVertex
+from collections import Counter
 
 class DAG(object):
     _default_log_level = 'INFO'
@@ -77,7 +78,10 @@ class DAG(object):
 
         self.pbar = pbar
 
+        self.op_name_counts = dict()# Counter(o.get_name() for o in self.all_ops.values())
+        self.op_suffixes = dict()
         self.all_ops, self.dep_map = self.build(self.required_outputs)
+
         self.name_to_op_map = {o.get_name():o for o in self.all_ops.values()}
         for lo in self.lazy_outputs:
             if lo not in self.name_to_op_map:
@@ -139,6 +143,12 @@ class DAG(object):
 
             # Give each Op a reference to this DAG
             o._set_dag(self)
+
+            # If name is duplicated, register a unique suffix for the op
+            o_name = o.get_name()
+            self.op_name_counts[o_name] = self.op_name_counts.get(o_name, 0) + 1
+            if self.op_name_counts[o_name] > 1:
+                self.op_suffixes[o] = '_%d' % (self.op_name_counts[o_name] - 1)
 
             # Ops stored in a dict for easy lookup
             all_ops[o] = o
@@ -368,6 +378,8 @@ class DAG(object):
         else:
             return o
 
+    def get_dag_unique_op_name(self, o):
+        return o.get_name() + self.op_suffixes.get(o, '')
 
     def viz(self, fontsize='10',
             color_mapping=None,
@@ -386,10 +398,11 @@ class DAG(object):
         dot.node_attr.update(color='lightblue2', style='filled')
 
         def _get_name(m):
-            if friendly_names:
-                return m.get_name()
-            else:
-                return m.unique_cls_name
+            return self.get_dag_unique_op_name(m)
+            #if friendly_names:
+            #    return m.get_name()
+            #else:
+            #    return m.unique_cls_name
 
         for m, deps in merged.items():
             n = _get_name(m)

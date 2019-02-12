@@ -150,10 +150,13 @@ class TestDSDAGBuild(unittest.TestCase):
         self.assertEqual(o1, o2, msg='Identical lambda ops not considered the same!')
         self.assertEqual(o2, o3, msg='Identical lambda ops not considered the same!')
 
-        key_names = [o.unique_cls_name for o in dag.dep_map.keys()]
+        #key_names = [o.unique_cls_name for o in dag.dep_map.keys()]
+        key_names = [o.get_name() for o in dag.dep_map.keys()]
 
-        detail_dep_is_in_map = {o.unique_cls_name: {d.unique_cls_name:d.unique_cls_name in key_names for d in deps}
-                         for o, deps in dag.dep_map.items()}
+        #detail_dep_is_in_map = {o.unique_cls_name: {d.unique_cls_name:d.unique_cls_name in key_names for d in deps}
+        #                 for o, deps in dag.dep_map.items()}
+        detail_dep_is_in_map = {o.get_name(): {d.get_name():d.get_name() in key_names for d in deps}
+                                for o, deps in dag.dep_map.items()}
 
         dep_is_in_map = {_name: all(dep_dict.values())
                     for _name, dep_dict in detail_dep_is_in_map.items()}
