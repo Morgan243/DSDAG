@@ -86,7 +86,7 @@ class DAG(object):
         for lo in self.lazy_outputs:
             if lo not in self.name_to_op_map:
                 self.logger.error("Lazy Op %s is not in resulting build Ops: %s"
-                                    % (lo, "\n".join(self.name_to_op_map.keys())))
+                                    % (lo, "\n" + "\n".join(self.name_to_op_map.keys())))
                 raise ValueError("Lazy Op %s could not be resolved after build" % lo)
 
             self.logger.info("Adding %s to outputs" % lo)

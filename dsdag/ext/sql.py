@@ -245,12 +245,20 @@ class SQL_Param(SQL, SQL_ParamMixin):
             frmt_params['join_clause'] += "\n\n" + "\n\n".join(join_statements)
 
         fieldnames = [fname for _, fname, _, _ in Formatter().parse(self.q) if fname]
+        for f in fieldnames:
+            if f not in frmt_params:
+                if not hasattr(self, f):
+                    raise ValueError("Cannot find field %s" % f)
+                else:
+                    frmt_params[f] = getattr(self, f)
+
         try:
             frmt_kwargs = {fname: frmt_params[fname] for fname in fieldnames}
         except KeyError as e:
             print(fieldnames)
             print(self.q)
             raise
+
 
         q = self.q.format(**frmt_kwargs)
 
