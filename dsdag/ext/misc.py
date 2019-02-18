@@ -34,3 +34,9 @@ class LambdaOp(OpVertex):
 
     def run(self, *args, **kwargs):
         return self.f(*args, **kwargs)
+
+class Select(OpVertex):
+    i = BaseParameter(0)
+    _never_cache = True
+    def run(self, l):
+        return l[self.i]
