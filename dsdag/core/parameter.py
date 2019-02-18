@@ -8,7 +8,7 @@ class _UnsetParameter(object):
 class BaseParameter(object):
     _reserved_kw = ('name',)
     def __init__(self, default=_UnsetParameter(),
-                 help_msg=None):
+                 help_msg=None, runtime=False):
         self.is_unset = True
         self.optional = not isinstance(default, _UnsetParameter)
         self.help_msg = help_msg
@@ -16,6 +16,7 @@ class BaseParameter(object):
         self.uid = str(uuid.uuid4())
         #self.set_value(default)
         self.value = default
+        self.runtime = runtime
         self._cached_decoded = None
 
     def __eq__(self, other):
