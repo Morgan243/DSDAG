@@ -7,6 +7,7 @@ from dsdag.core.op import OpVertex
 from collections import Counter
 
 class DAG(object):
+    _CACHE=dict()
     _default_log_level = 'INFO'
     def __init__(self, required_outputs,
                  read_from_cache=False,
@@ -30,7 +31,8 @@ class DAG(object):
         :param logger: (logger or string level) Pass logger level (e.g. 'INFO', 'WARN') to set default level or pass
                         custom logger
         """
-        if isinstance(logger, basestring):
+        #if isinstance(logger, basestring):
+        if isinstance(logger, str):
             log_level = logger
             logger = None
         else:
@@ -48,13 +50,17 @@ class DAG(object):
         self.using_cache = (self.read_from_cache or self.write_to_cache)
         self.force_downstream_rerun = force_downstream_rerun
 
+
         if self.using_cache and (cache is None):
-            self.logger.warning("Use cache set, but None provided, creating default")
-            self.cache = idt.RepoTree()
+            logger.info("Using dict cache")
+            self.cache = DAG._CACHE
+            #self.logger.warning("Use cache set, but None provided, creating default")
+            #self.cache = idt.RepoTree()
         elif cache is not None:
             self.cache = cache
         else:
-            self.cache = dict()
+            logger.info("Using dict cache")
+            self.cache = DAG._CACHE
 
 
         if not isinstance(required_outputs, (list, tuple)):
@@ -82,6 +88,12 @@ class DAG(object):
         self.op_suffixes = dict()
         self.all_ops, self.dep_map = self.build(self.required_outputs)
 
+
+        self.runtime_parameters = dict()
+        for op in self.all_ops:
+            for p_name, param in op._runtime_parameters.items():
+                self.runtime_parameters[p_name] = param
+
         self.name_to_op_map = {o.get_name():o for o in self.all_ops.values()}
         for lo in self.lazy_outputs:
             if lo not in self.name_to_op_map:
@@ -108,7 +120,7 @@ class DAG(object):
         self.completed_ops = dict()
 
     def __call__(self, *args, **kwargs):
-        return self.run_dag()
+        return self.run_dag(*args, **kwargs)
 
     def __getitem__(self, item):
         return self.completed_ops.get(item, self.name_to_op_map[item])
@@ -241,11 +253,16 @@ class DAG(object):
                                                            finish_t - start_t))
         self.completed_ops[p.get_name()] = p
 
-    def run_dag(self):
+    def set_runtime(self, **kwargs):
+        for k, v in kwargs.items():
+            self.runtime_parameters[k] = None
+
+    def run_dag(self, *args, **kwargs):
         self.dag_start_time = time.time()
         computed = set()
         if self.pbar:
-            from tqdm import tqdm
+            #from tqdm import tqdm
+            from tqdm.auto import tqdm
             self.tqdm_bar = tqdm(total=len(self.all_requirements))
 
         # For each ter
@@ -273,12 +290,15 @@ class DAG(object):
                                    and (not any(p.__class__.__name__ in computed for p in dep_values)
                                         or not self.force_downstream_rerun)
                                    and self.read_from_cache
-                                   and process_cls_name in self.cache)
+                                   and process_cls_name in self.cache or process in self.cache)
                 if load_from_cache:
                     if not self.pbar:
                         self.logger.info("%s Will use cached output of %s"
                                          % (tpid, process_cls_name))
-                    self.outputs[process] = self.cache[process_cls_name]
+                    if isinstance(self.cache, idt.RepoTree):
+                        self.outputs[process] = self.cache[process_cls_name]
+                    else:
+                        self.outputs[process] = self.cache[process]
                 else:
                     proc_args = list()
                     proc_kwargs = dict()
@@ -343,7 +363,8 @@ class DAG(object):
                 future_deps = set(future_deps)
                 self.logger.debug("%d Future deps" % len(future_deps))
 
-                for k in self.outputs.keys():
+
+                for k in list(self.outputs.keys()):
                     if k not in future_deps and k not in self.required_outputs:
                         self.logger.debug("Deleting future dep %s" % k.__class__.__name__)
                         del self.outputs[k]
@@ -352,11 +373,14 @@ class DAG(object):
                 if self.write_to_cache and not load_from_cache and process._cacheable:
                     if not self.pbar:
                         self.logger.info("Persisting output of %s" % process_cls_name)
-                    self.cache.save(self.outputs[process],
-                                        name=process_cls_name,
-                                        author='dag',
-                                        param_names=list(proc_kwargs.keys()),
-                                        auto_overwrite=True)
+                    if isinstance(self.cache, idt.RepoTree):
+                        self.cache.save(self.outputs[process],
+                                            name=process_cls_name,
+                                            author='dag',
+                                            param_names=list(proc_kwargs.keys()),
+                                            auto_overwrite=True)
+                    elif isinstance(self.cache, dict):
+                        self.cache[process] = self.outputs[process]
 
         if self.pbar:
             self.tqdm_bar.close()
@@ -383,6 +407,7 @@ class DAG(object):
 
     def viz(self, fontsize='10',
             color_mapping=None,
+            cache_color=None,
             #format='png',
             friendly_names=True,
             rankdir='UD',
@@ -410,6 +435,10 @@ class DAG(object):
             node_attrs = m._get_viz_attrs()
             if color_mapping is not None and n in color_mapping:
                 node_attrs['color'] = color_mapping[n]
+
+            if cache_color is not None and m in self.cache:
+                node_attrs['color'] = cache_color
+
 
             dot.node(n, **node_attrs)
 
@@ -483,13 +512,14 @@ class DAG(object):
 
     def plot(self):
         import matplotlib
+        from matplotlib import pyplot as plt
         import matplotlib.dates as mdates
         sys_s = pd.Series(self.system_utilization)
         sys_s.index = pd.to_datetime(sys_s.index, unit='s')
         sys_s = sys_s / (1024. ** 2)
 
         height = 0.20 * len(self.start_and_finish_times.keys())
-        fig, ax = matplotlib.pyplot.subplots(figsize=(16, height))
+        fig, ax = plt.subplots(figsize=(16, height))
         # gd.configure_imports(matplotlib_style='default')
 
         ax2 = ax.twinx()
