@@ -105,6 +105,7 @@ class OpVertex(object):
         obj.req_hash = None
         obj._unpack_ops = set()
         obj.unpack_output = False
+        obj._downstream = dict()
 
         obj._dag = None
         obj._user_args = args
@@ -113,6 +114,7 @@ class OpVertex(object):
 
         obj._user_kwargs = kwargs
         obj._parameters = obj.scan_for_op_parameters(overrides=obj._user_kwargs)
+        obj._runtime_parameters = {k:v for k, v in obj._parameters.items() if v.runtime}
         obj._name = kwargs.get('name', None)
         #if obj._name is not None:
         #    name_iid = obj.__class__._given_name_cnt_map.get(obj._name, 0)
@@ -222,6 +224,13 @@ class OpVertex(object):
         return dict(color=self._node_color(),
                     style=self._node_style(),
                     shape=self._node_shape())
+
+    def set_downstream(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+            self._downstream[k] = v
+
+        return self
 
     def get_logger(self, log_level='WARN'):
         if self._dag is not None:
@@ -354,6 +363,8 @@ class OpVertex(object):
             msg = "Mix of *args and **kwargs not supported (yet?)"
             raise ValueError(msg)
 
+        for r in req_ret:
+            self.set_downstream(**r._downstream)
 
         if req_hash not in self.__class__._closure_map:
             def closure(self):
@@ -416,6 +427,8 @@ class OpVertex(object):
 
 
 
+class UpackingOp(OpVertex):
+    pass
 
 ##############
 if __name__ == """__main__""":
