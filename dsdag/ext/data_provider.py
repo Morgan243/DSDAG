@@ -2,7 +2,7 @@
 from dsdag.core.op import OpVertex
 from dsdag.core.parameter import BaseParameter, RepoTreeParameter
 
-import gnwdata as gd
+#import gnwdata as gd
 class Passthrough(OpVertex):
     _never_cache = True
     def _node_color(self):
@@ -22,8 +22,8 @@ class BaseDataProvider(OpVertex):
 
     system_kwargs = dict()
     existing_connections = dict()
-    system_map = dict(greenplum=gd.greenplum,
-                      oracle=gd.oracle)
+    system_map = dict(greenplum=None, #gd.greenplum,
+                      oracle=None) #gd.oracle)
 
     def _node_color(self):
         return '#eded5c'

@@ -408,7 +408,7 @@ class BoostedBinaryClassifier(BaseWrangler):
         self.test_predictions[m_name] = pd.Series(y_pred,  # index=self.test_ixes,
                                                   index=(df.loc[self.test_ixes].set_index(self.comp_key).index
                                                          if self.comp_key is not None
-                                                         else self.test_ixes),
+                                                         else test_df.index),
                                                   name="%s_test_predictions" % m_name)
         print(m_name)
         self.print_classification_report(test_df[self.target],
@@ -457,8 +457,8 @@ class BoostedBinaryClassifier(BaseWrangler):
     @staticmethod
     def print_classification_report(y_true, y_pred,
                                     **kwargs):
-        print classification_report(y_true, y_pred,
-                                    **kwargs)
+        print(classification_report(y_true, y_pred,
+                                    **kwargs))
 
     @staticmethod
     def performance(y_true, y_pred):
@@ -686,8 +686,8 @@ class BaseBinaryClassifierModel(BaseWrangler):
     @staticmethod
     def print_classification_report(y_true, y_pred,
                                     **kwargs):
-        print classification_report(y_true, y_pred,
-                                    **kwargs)
+        print(classification_report(y_true, y_pred,
+                                    **kwargs))
 
     @staticmethod
     def performance(y_true, y_pred):
@@ -999,8 +999,8 @@ class BaseBinaryClassifierModel_old(BaseWrangler):
     @staticmethod
     def print_classification_report(y_true, y_pred,
                                     **kwargs):
-        print classification_report(y_true, y_pred,
-                                    **kwargs)
+        print(classification_report(y_true, y_pred,
+                                    **kwargs))
 
     @staticmethod
     def performance(y_true, y_pred):
