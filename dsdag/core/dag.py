@@ -43,7 +43,11 @@ class DAG(object):
         if logger is None:
             logger = logging.getLogger(name='DSDAG')
             logger.setLevel(log_level)
+
         self.logger = logger
+        self.log_level = log_level
+        self.op_loggers = dict()
+
         ####
         self.live_browse = live_browse
 
@@ -136,6 +140,13 @@ class DAG(object):
         process = psutil.Process(os.getpid())
         t = time.time()
         self.system_utilization[t] = process.memory_info().rss
+
+    def get_op_logger(self, op):
+        if op not in self.op_loggers:
+            l = logging.getLogger(op.get_name())
+            l.setLevel(self.log_level)
+            self.op_loggers[op] = l
+        return self.op_loggers[op]
 
     def build(self, required_outputs):
         if not isinstance(required_outputs, list):
@@ -338,9 +349,6 @@ class DAG(object):
     def run_dag(self, *args, **kwargs):
         self.dag_start_time = time.time()
         computed = list()
-        if self.pbar:
-            from tqdm.auto import tqdm
-            self.tqdm_bar = tqdm(total=len(self.all_requirements))
 
         if self.read_from_cache and self.cache is not None:
             backtrack_amount = self.find_min_backtrack_amount(self.required_outputs)
@@ -348,6 +356,11 @@ class DAG(object):
             backtrack_amount = len(self.topology)
 
         start_level = len(self.topology) - backtrack_amount
+        run_reqs = [o for l in self.topology[start_level:] for o in l]
+
+        if self.pbar:
+            from tqdm.auto import tqdm
+            self.tqdm_bar = tqdm(total=len(run_reqs))
 
         # For each ter
         for i, ind_processes in enumerate(self.topology[start_level:]):
@@ -476,8 +489,9 @@ class DAG(object):
                     self.cache[k].delete('dag')
         elif self.cache is not None:
             for k in self.all_ops:
-                self.logger.info("Removing %s from cache" % k)
-                del self.cache[k]
+                if k in self.cache:
+                    self.logger.info("Removing %s from cache" % k)
+                    del self.cache[k]
 
     def viz(self, fontsize='10',
             color_mapping=None,

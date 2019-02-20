@@ -234,7 +234,7 @@ class OpVertex(object):
 
     def get_logger(self, log_level='WARN'):
         if self._dag is not None:
-            l = self._dag.logger
+            l = self._dag.get_op_logger(self)
         else:
             l = logging.getLogger()
             l.setLevel(log_level)
