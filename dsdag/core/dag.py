@@ -13,6 +13,7 @@ class DAG(object):
                  read_from_cache=False,
                  write_to_cache=False,
                  cache=None,
+                 cache_eviction=False,
                  force_downstream_rerun=True,
                  pbar=False,
                  live_browse=False,
@@ -25,6 +26,7 @@ class DAG(object):
         :param read_from_cache: (bool) True if Op outputs should be read from the provided cache
         :param write_to_cache: (bool) True if Op outputs should be written to the provided cache
         :param cache: (RepoTree) Caching location
+        :param cache_eviction: (bool) If True, only the Op outputs required for the dag at each step are kept in the cache
         :param force_downstream_rerun: (bool) True if all dependent outputs should be rerun after an Op is run
         :param pbar: (bool) Use tqdm progress bar
         :param live_browse: (bool) Experimental
@@ -50,7 +52,7 @@ class DAG(object):
         self.using_cache = (self.read_from_cache or self.write_to_cache)
         self.force_downstream_rerun = force_downstream_rerun
 
-
+        self.cache_eviction = cache_eviction
         if self.using_cache and (cache is None):
             logger.info("Using dict cache")
             self.cache = DAG._CACHE
@@ -257,92 +259,144 @@ class DAG(object):
         for k, v in kwargs.items():
             self.runtime_parameters[k] = None
 
+    def collect_op_inputs(self, op):
+        dependencies = self.dep_map.get(op, dict())
+        process_name = op.get_name()
+        proc_args, proc_kwargs = list(), dict()
+
+        if isinstance(dependencies, dict):
+            for k, v in dependencies.items():
+                if v not in self.outputs:
+                    msg = "The process %s has a missing dependency:" % process_name
+                    msg += "%s=%s" % (k, v.__class__.__name__)
+                    self.logger.error(msg=msg)
+                    return -1
+                if isinstance(self.outputs[v], idt.RepoLeaf):
+                    self.outputs[v] = self.outputs[v].load()
+
+                if op.is_unpack_required(v) or v.unpack_output:
+                    if isinstance(self.outputs[v], dict):
+                        proc_kwargs.update(self.outputs[v])
+                    else:
+                        proc_args += list(self.outputs[v])
+                else:
+                    proc_kwargs[k] = self.outputs[v]
+
+        elif isinstance(dependencies, list):
+            for _i, v in enumerate(dependencies):
+                if v not in self.outputs:
+                    msg = "The process %s (%s) has a missing dependency:" % (process_name,
+                                                                             op.__class__.__name__)
+                    msg += "%s=%s" % ("*arg[%d]" % _i, v.__class__.__name__)
+                    self.logger.error(msg=msg)
+                    return -1
+                if isinstance(self.outputs[v], idt.RepoLeaf):
+                    self.outputs[v] = self.outputs[v].load()
+
+                if op.is_unpack_required(v) or v.unpack_output:
+                    if isinstance(self.outputs[v], dict):
+                        proc_kwargs.update(self.outputs[v])
+                    else:
+                        proc_args += list(self.outputs[v])
+                else:
+                    proc_args.append(self.outputs[v])
+
+        return proc_args, proc_kwargs
+
+    def find_min_backtrack_amount(self, ops, level=1):
+        """
+        Determine how far *back* in the topology we must go back. Will return
+        the first topology level (forward direction) that has deps satisfied through
+        cache or direct input.
+
+        Assumes that the Ops given wil lbe computed, so backtrack defaults to 1, e.g.
+        that we must always start with collecting the given Ops' inputs and so that
+        that the given Ops can be computed (not restored from cache)
+
+        :param ops:
+        :param level:
+        :return:
+        """
+        dep_start_levels = [level]
+        for op in ops:
+            # Get list of dependencies for this op
+            dependencies = self.dep_map.get(op, dict())
+            dep_values = dependencies.values() if isinstance(dependencies, dict) else dependencies
+
+            for dep in dep_values:
+                in_cache = (dep._cacheable and
+                           (dep in self.cache or dep.get_name() in self.cache))
+                # If we don't have it cached - recurse into its dependencies
+                if not in_cache:
+                    l = self.find_min_backtrack_amount([dep], level=level + 1)
+                    dep_start_levels.append(l)
+                else:
+                    dep_start_levels.append(level)
+
+        return max(dep_start_levels)
+
     def run_dag(self, *args, **kwargs):
         self.dag_start_time = time.time()
-        computed = set()
+        computed = list()
         if self.pbar:
-            #from tqdm import tqdm
             from tqdm.auto import tqdm
             self.tqdm_bar = tqdm(total=len(self.all_requirements))
 
+        if self.read_from_cache and self.cache is not None:
+            backtrack_amount = self.find_min_backtrack_amount(self.required_outputs)
+        else:
+            backtrack_amount = len(self.topology)
+
+        start_level = len(self.topology) - backtrack_amount
+
         # For each ter
-        for i, ind_processes in enumerate(self.topology):
+        for i, ind_processes in enumerate(self.topology[start_level:]):
+            i = i+start_level
             ind_processes = list(ind_processes)
             # For each dependency in the iter
             for j, process in enumerate(ind_processes):
                 if self.live_browse and len(self.outputs) > 0:
                     self.browse()
-                process_cls_name = process.__class__.__name__
-                process_friendly_name = process.get_name()
+
+                process_name = process.get_name()
+
                 if self.pbar:
-                    self.tqdm_bar.set_description(process_friendly_name)
+                    self.tqdm_bar.set_description(process_name)
                 else:
-                    self.logger.info(process_friendly_name)
+                    self.logger.info(process_name)
 
                 # May be a list of dependencies (*args) or a dict (**kwargs)
                 dependencies = self.dep_map.get(process, dict())
                 dep_values = dependencies.values() if isinstance(dependencies, dict) else dependencies
 
                 tpid = "[%d.%d]" % (i, j)
-
                 load_from_cache = (process not in self.required_outputs  # always run specified vertices
+                                   # Op is set to cacheable (default)
                                    and process._cacheable
-                                   and (not any(p.__class__.__name__ in computed for p in dep_values)
+                                   # If None of an Ops depends has been (re)computed
+                                   # and we're not forcing all downstream to run
+                                   and (not any(p in computed for p in dep_values)
                                         or not self.force_downstream_rerun)
+                                    # DAG is set to read from cache
                                    and self.read_from_cache
-                                   and process_cls_name in self.cache or process in self.cache)
+                                    # Proces is in the cache (check dict or IDT)
+                                   and process_name in self.cache or process in self.cache)
                 if load_from_cache:
                     if not self.pbar:
                         self.logger.info("%s Will use cached output of %s"
-                                         % (tpid, process_cls_name))
+                                         % (tpid, process_name))
                     if isinstance(self.cache, idt.RepoTree):
-                        self.outputs[process] = self.cache[process_cls_name]
+                        self.outputs[process] = self.cache[process_name]
                     else:
                         self.outputs[process] = self.cache[process]
                 else:
-                    proc_args = list()
-                    proc_kwargs = dict()
-                    if isinstance(dependencies, dict):
-                        for k, v in dependencies.items():
-                            if v not in self.outputs:
-                                msg = "The process %s has a missing dependency:" % process_cls_name
-                                msg += "%s=%s" % (k, v.__class__.__name__)
-                                self.logger.error(msg=msg)
-                                return -1
-                            if isinstance(self.outputs[v], idt.RepoLeaf):
-                                self.outputs[v] = self.outputs[v].load()
-
-                            if process.is_unpack_required(v) or v.unpack_output:
-                                if isinstance(self.outputs[v], dict):
-                                    proc_kwargs.update(self.outputs[v])
-                                else:
-                                    proc_args += list(self.outputs[v])
-                            else:
-                                proc_kwargs[k] = self.outputs[v]
-
-                    elif isinstance(dependencies, list):
-                        for _i, v in enumerate(dependencies):
-                            if v not in self.outputs:
-                                msg = "The process %s has a missing dependency:" % process_cls_name
-                                msg += "%s=%s" % (k, v.__class__.__name__)
-                                self.logger.error(msg=msg)
-                                return -1
-                            if isinstance(self.outputs[v], idt.RepoLeaf):
-                                self.outputs[v] = self.outputs[v].load()
-
-                            if process.is_unpack_required(v) or v.unpack_output:
-                                if isinstance(self.outputs[v], dict):
-                                    proc_kwargs.update(self.outputs[v])
-                                else:
-                                    proc_args += list(self.outputs[v])
-                            else:
-                                proc_args.append(self.outputs[v])
+                    proc_args, proc_kwargs = self.collect_op_inputs(process)
 
                     self.exec_process(process=process,
                                       proc_args=proc_args,
                                       proc_exec_kwargs=proc_kwargs,
                                       tpid=tpid)
-                    computed.add(process_cls_name)
+                    computed.append(process)
 
                 if self.pbar:
                     self.tqdm_bar.update(1)
@@ -355,6 +409,7 @@ class DAG(object):
                     future_deps += list(d for d in dep_iter)
 
                 # Go through future levels
+                # Include this level - so really we are removing leftovers from the previous level
                 for topo in self.topology[i:]:
                     for p in topo:
                         deps = self.dep_map.get(p, dict())
@@ -368,14 +423,21 @@ class DAG(object):
                     if k not in future_deps and k not in self.required_outputs:
                         self.logger.debug("Deleting future dep %s" % k.__class__.__name__)
                         del self.outputs[k]
+                        in_cache = (k.__class__.__name__ in self.cache or k in self.cache)
+                        if k._cacheable and self.cache_eviction and in_cache:
+                            self.logger.debug("Removing unnecessary op from cache %s" % k.__class__.__name__)
+                            if isinstance(self.cache, idt.RepoTree):
+                                self.cache[k.__class__.__name__].delete('dag')
+                            else:
+                                del self.cache[k]
 
                 # No reason to save the cached output back
                 if self.write_to_cache and not load_from_cache and process._cacheable:
                     if not self.pbar:
-                        self.logger.info("Persisting output of %s" % process_cls_name)
+                        self.logger.info("Persisting output of %s" % process_name)
                     if isinstance(self.cache, idt.RepoTree):
                         self.cache.save(self.outputs[process],
-                                            name=process_cls_name,
+                                            name=process_name,
                                             author='dag',
                                             param_names=list(proc_kwargs.keys()),
                                             auto_overwrite=True)
@@ -404,6 +466,18 @@ class DAG(object):
 
     def get_dag_unique_op_name(self, o):
         return o.get_name() + self.op_suffixes.get(o, '')
+
+    def clear_cache(self):
+        self.logger.info("clearing cache")
+        if isinstance(self.cache, idt.RepoTree):
+            for k in self.name_to_op_map.keys():
+                if k in self.cache:
+                    self.logger.info("Removing %s from repo cache" % k)
+                    self.cache[k].delete('dag')
+        elif self.cache is not None:
+            for k in self.all_ops:
+                self.logger.info("Removing %s from cache" % k)
+                del self.cache[k]
 
     def viz(self, fontsize='10',
             color_mapping=None,

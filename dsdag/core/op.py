@@ -364,7 +364,8 @@ class OpVertex(object):
             raise ValueError(msg)
 
         for r in req_ret:
-            self.set_downstream(**r._downstream)
+            if hasattr(r, '_downstream'):
+                self.set_downstream(**r._downstream)
 
         if req_hash not in self.__class__._closure_map:
             def closure(self):
@@ -400,6 +401,7 @@ class OpVertex(object):
               read_from_cache=False,
               write_to_cache=False,
               cache=None,
+              cache_eviction=False,
               force_downstream_rerun=True,
               pbar=False,
               live_browse=False,
@@ -410,6 +412,7 @@ class OpVertex(object):
                    read_from_cache=read_from_cache,
                    write_to_cache=write_to_cache,
                    cache=cache,
+                   cache_eviction=cache_eviction,
                    force_downstream_rerun=force_downstream_rerun,
                    pbar=pbar,
                    live_browse=live_browse,
