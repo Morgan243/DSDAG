@@ -678,8 +678,7 @@ class BaseBinaryClassifierModel(BaseWrangler):
         #scores = self.score(df, best_model)
         logger.info("Producing predictions for all models trained")
         scores = pd.DataFrame({mname: self.score(df, m)
-                               for mname, m in models.items()},
-                              index=df.index)
+                               for mname, m in models.items()})
 
         return models, perf_res, scores
 
