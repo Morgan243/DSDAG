@@ -224,13 +224,6 @@ class DAG(object):
                             del all_ops[_o]
                             all_ops[_o] = _o
                 else:
-                    #req_k = dep_map[o]
-                    #if req_k in all_ops:
-                    #    _o = all_ops[dep_map[o]]
-                    #    dep_map[o] = _o
-                    #    del all_ops[_o]
-                    #    all_ops[_o] = _o
-
                     msg = "Found unsupported Op dependency object %s" % type(o)
                     raise ValueError(msg)
 
@@ -314,57 +307,46 @@ class DAG(object):
 
         return proc_args, proc_kwargs
 
-    def find_min_backtrack_amount(self, ops, level=1):
-        """
-        Determine how far *back* in the topology we must go back. Will return
-        the first topology level (forward direction) that has deps satisfied through
-        cache or direct input.
+    def find_min_topology(self):#, ops, topology=[]):
+        dep_satisfied = lambda dep: (dep._cacheable and
+                                     self.using_cache and
+                                     self.cache is not None and
+                                    (dep in self.cache or dep.get_name() in self.cache))
 
-        Assumes that the Ops given wil lbe computed, so backtrack defaults to 1, e.g.
-        that we must always start with collecting the given Ops' inputs and so that
-        that the given Ops can be computed (not restored from cache)
+        dep_map = dict()
+        deps_to_resolve = list(self.required_outputs)
+        while len(deps_to_resolve) > 0:
+            o = deps_to_resolve[0]
+            deps_to_resolve = deps_to_resolve[1:]
 
-        :param ops:
-        :param level:
-        :return:
-        """
-        dep_start_levels = [level]
-        for op in ops:
-            # Get list of dependencies for this op
-            dependencies = self.dep_map.get(op, dict())
-            dep_values = dependencies.values() if isinstance(dependencies, dict) else dependencies
+            reqs = self.dep_map[o]
+            # No matter what, the dag needs to see the requirements
+            dep_map[o] = reqs
 
-            for dep in dep_values:
-                in_cache = (dep._cacheable and
-                           (dep in self.cache or dep.get_name() in self.cache))
-                # If we don't have it cached - recurse into its dependencies
-                if not in_cache:
-                    l = self.find_min_backtrack_amount([dep], level=level + 1)
-                    dep_start_levels.append(l)
-                else:
-                    dep_start_levels.append(level)
+            # reqs can be kwargs or args (list)
+            _iter_reqs = reqs.values() if isinstance(reqs, dict) else reqs
+            # But only need to resolve those that are not satisfied already
+            deps_to_resolve += [r for r in _iter_reqs if not dep_satisfied(r)]
 
-        return max(dep_start_levels)
+
+        dep_sets = {p: set(d.values()) if isinstance(d, dict) else set(d)
+                    for p, d in dep_map.items()}
+        topology = list(toposort(dep_sets))
+        return topology
 
     def run_dag(self, *args, **kwargs):
         self.dag_start_time = time.time()
         computed = list()
 
-        if self.read_from_cache and self.cache is not None:
-            backtrack_amount = self.find_min_backtrack_amount(self.required_outputs)
-        else:
-            backtrack_amount = len(self.topology)
-
-        start_level = len(self.topology) - backtrack_amount
-        run_reqs = [o for l in self.topology[start_level:] for o in l]
+        topology = self.find_min_topology()
+        run_reqs = [o for l in topology for o in l]
 
         if self.pbar:
             from tqdm.auto import tqdm
             self.tqdm_bar = tqdm(total=len(run_reqs))
 
         # For each ter
-        for i, ind_processes in enumerate(self.topology[start_level:]):
-            i = i+start_level
+        for i, ind_processes in enumerate(topology):
             ind_processes = list(ind_processes)
             # For each dependency in the iter
             for j, process in enumerate(ind_processes):
@@ -415,6 +397,9 @@ class DAG(object):
                     self.tqdm_bar.update(1)
 
                 future_deps = list()
+                #####
+                # Go through future Ops to determine dependencies
+
                 # Go through remaining processes at this level
                 for p in ind_processes[j+1:]:
                     deps = self.dep_map.get(p, dict())
@@ -422,8 +407,8 @@ class DAG(object):
                     future_deps += list(d for d in dep_iter)
 
                 # Go through future levels
-                # Include this level - so really we are removing leftovers from the previous level
-                for topo in self.topology[i:]:
+                ### Include this level - so really we are removing leftovers from the previous level
+                for topo in topology[i:]:
                     for p in topo:
                         deps = self.dep_map.get(p, dict())
                         vals = deps.values() if isinstance(deps, dict) else deps
@@ -431,20 +416,7 @@ class DAG(object):
                 future_deps = set(future_deps)
                 self.logger.debug("%d Future deps" % len(future_deps))
 
-
-                for k in list(self.outputs.keys()):
-                    if k not in future_deps and k not in self.required_outputs:
-                        self.logger.debug("Deleting future dep %s" % k.__class__.__name__)
-                        del self.outputs[k]
-                        in_cache = (k.__class__.__name__ in self.cache or k in self.cache)
-                        if k._cacheable and self.cache_eviction and in_cache:
-                            self.logger.debug("Removing unnecessary op from cache %s" % k.__class__.__name__)
-                            if isinstance(self.cache, idt.RepoTree):
-                                self.cache[k.__class__.__name__].delete('dag')
-                            else:
-                                del self.cache[k]
-
-                # No reason to save the cached output back
+                 # No reason to save the cached output back
                 if self.write_to_cache and not load_from_cache and process._cacheable:
                     if not self.pbar:
                         self.logger.info("Persisting output of %s" % process_name)
@@ -456,6 +428,20 @@ class DAG(object):
                                             auto_overwrite=True)
                     elif isinstance(self.cache, dict):
                         self.cache[process] = self.outputs[process]
+
+                for k in list(self.outputs.keys()):
+                    if k not in future_deps and k not in self.required_outputs:
+                        self.logger.debug("Deleting future dep %s" % k.__class__.__name__)
+                        del self.outputs[k]
+
+                        in_cache = (k.__class__.__name__ in self.cache or k in self.cache)
+                        if k._cacheable and self.cache_eviction and in_cache:
+                            self.logger.debug("Removing unnecessary op from cache %s" % k.__class__.__name__)
+                            if isinstance(self.cache, idt.RepoTree):
+                                self.cache[k.__class__.__name__].delete('dag')
+                            else:
+                                del self.cache[k]
+
 
         if self.pbar:
             self.tqdm_bar.close()
@@ -492,6 +478,7 @@ class DAG(object):
                 if k in self.cache:
                     self.logger.info("Removing %s from cache" % k)
                     del self.cache[k]
+        return self
 
     def viz(self, fontsize='10',
             color_mapping=None,

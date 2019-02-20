@@ -191,6 +191,40 @@ class TestDSDAGBuild(unittest.TestCase):
 
         self.assertEqual(op, dag['important_op'])
 
+
+    def test_forked_dag_caching(self):
+        class Canary(object):
+            canary = 0
+
+        class CacheTestOpA(OpVertex):
+            def run(self, x):
+                Canary.canary +=1
+                return [x*.5]
+
+        class CacheTestOpB(OpVertex):
+            def run(self, x):
+                Canary.canary +=1
+                return x*5
+
+        opA = CacheTestOpB()(5)
+        opA = CacheTestOpB()(opA)
+        opA = CacheTestOpB()(opA)
+        A_part_dag = opA.build(write_to_cache=True)
+
+        opA = CacheTestOpB()(opA)
+
+        opB = CacheTestOpB()(3)
+        opB = CacheTestOpB()(opB)
+
+
+        output_op = LambdaOp(f=lambda a1, a2: a1 + a2)(opA, opB)
+
+        output_dag = output_op.build(write_to_cache=True, read_from_cache=True,
+                                     cache_eviction=True)
+        part_res = A_part_dag()
+        full_res = output_dag()
+
+
     def test_caching(self):
         class Canary(object):
             canary = 0
@@ -207,34 +241,28 @@ class TestDSDAGBuild(unittest.TestCase):
 
         op_a = CacheTestOpA()(10)
         op_b = CacheTestOpB()(op_a)
-        dag = LambdaOp(f=sum)(op_b).build(write_to_cache=True, read_from_cache=True)
+        dag = LambdaOp(f=sum)(op_b).build(write_to_cache=True, read_from_cache=True,
+                                          logger='DEBUG')
         # First run
-        l = dag.find_min_backtrack_amount(dag.required_outputs)
-        self.assertEqual(l, 4)
         res = dag()
         self.assertEqual(Canary.canary, 2)
         Canary.canary = 0
 
         res = dag()
-        l = dag.find_min_backtrack_amount(dag.required_outputs)
-        self.assertEqual(l, 1)
         self.assertEqual(Canary.canary, 0)
 
         dag.clear_cache()
         self.assertEqual(len(dag.cache), 0)
 
         ## Cache eviction
-        dag = LambdaOp(f=sum)(op_b).build(write_to_cache=True, read_from_cache=True, cache_eviction=True)
-        l = dag.find_min_backtrack_amount(dag.required_outputs)
-        self.assertEqual(l, 4)
+        dag = LambdaOp(f=sum)(op_b).build(write_to_cache=True, read_from_cache=True,
+                                          cache_eviction=True, logger='DEBUG')
         # First run
         res = dag()
         self.assertEqual(Canary.canary, 2)
         Canary.canary = 0
 
         res = dag()
-        l = dag.find_min_backtrack_amount(dag.required_outputs)
-        self.assertEqual(l, 1)
         self.assertEqual(Canary.canary, 0)
 
     def test_getting_input_ops(self):
