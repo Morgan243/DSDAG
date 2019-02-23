@@ -15,7 +15,7 @@ class DAG(object):
                  cache=None,
                  cache_eviction=False,
                  force_downstream_rerun=True,
-                 pbar=False,
+                 pbar=True,
                  live_browse=False,
                  logger=None):
         """
@@ -60,8 +60,6 @@ class DAG(object):
         if self.using_cache and (cache is None):
             logger.info("Using dict cache")
             self.cache = DAG._CACHE
-            #self.logger.warning("Use cache set, but None provided, creating default")
-            #self.cache = idt.RepoTree()
         elif cache is not None:
             self.cache = cache
         else:
@@ -353,7 +351,7 @@ class DAG(object):
                 if self.live_browse and len(self.outputs) > 0:
                     self.browse()
 
-                process_name = process.get_name()
+                process_name = self.get_dag_unique_op_name(process)
 
                 if self.pbar:
                     self.tqdm_bar.set_description(process_name)

@@ -403,7 +403,7 @@ class OpVertex(object):
               cache=None,
               cache_eviction=False,
               force_downstream_rerun=True,
-              pbar=False,
+              pbar=True,
               live_browse=False,
               logger=None):
 
