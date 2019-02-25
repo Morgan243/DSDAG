@@ -5,6 +5,7 @@ setup(name='dsdag',
       description='Data Science DAG Processing',
       author='Morgan Stuart',
       packages=['dsdag', 'dsdag/core', 'dsdag/ext'],#['dsdag', 'projects'],
-      install_requires=['toposort'],
+      install_requires=['toposort', 'imblearn', 'sklearn',
+                        'pandas', 'numpy', 'pydot', 'dask'],
       zip_safe=False
       )
