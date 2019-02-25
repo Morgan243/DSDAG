@@ -98,7 +98,8 @@ class ContourPlot(OpVertex):
                           cmap=plt.cm.hsv,
                           vmax=vmax, vmin=vmin)
         if cbar:
-            plt.colorbar(mappable=ctr)
+            #plt.colorbar(mappable=ctr)
+            plt.colorbar(ctr, ax=ax)
 
         ax.scatter(x=_s_df['x'], y=_s_df['y'],
                    cmap='gray', s=5,
@@ -106,6 +107,8 @@ class ContourPlot(OpVertex):
                    )
 
         ax.set_title(title)
+
+        return ax
 
     def run(self, df, ax=None, value_column=None, ):
         value_column = self.value_column if value_column is None else value_column

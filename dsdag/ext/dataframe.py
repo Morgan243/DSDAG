@@ -6,6 +6,18 @@ class DFOp(OpVertex):
     def _node_color(self):
         return '#615eff'
 
+class Read_CSV(OpVertex):
+    filepath_or_buffer = BaseParameter()
+    sep = BaseParameter(',')
+    delimiter = BaseParameter(None)
+    header = BaseParameter('infer')
+    def run(self, path=None):
+        if path is None:
+            path = self.filepath_or_buffer
+        return pd.read_csv(filepath_or_buffer=path,
+                           sep=self.sep, delimiter=self.delimiter,
+                           header=self.header)
+
 class Merge(DFOp):
     #key = BaseParameter()
     how = BaseParameter('inner')
@@ -87,10 +99,15 @@ class Query(DFOp):
         return df.query(self.q)
 
 class AssignColumn(DFOp):
-    column = BaseParameter()
-    value = BaseParameter()
+    column = BaseParameter(None)
+    value = BaseParameter(None)
+    assignments = BaseParameter(None)
     def run(self, df):
-        df[self.column] = self.value
+        if self.assignments is not None:
+            for col, val in self.assignments.items():
+                df[col] = val
+        else:
+            df[self.column] = self.value
         return df
 
 class RenameColumns(DFOp):

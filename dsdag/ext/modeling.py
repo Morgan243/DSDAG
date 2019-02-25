@@ -414,7 +414,8 @@ class BoostedBinaryClassifier(BaseWrangler):
         self.print_classification_report(test_df[self.target],
                                          y_pred)
         test_performance = self.performance(test_df[self.target],
-                                            y_pred)
+                                            y_pred,
+                                            **self.performance_metric_kwargs)
 
         if self.model_rt is not None:
             save_name = self.model_name + "_" + m_name
@@ -461,12 +462,12 @@ class BoostedBinaryClassifier(BaseWrangler):
                                     **kwargs))
 
     @staticmethod
-    def performance(y_true, y_pred):
+    def performance(y_true, y_pred, **kwargs):
        return dict(
                 accuracy=accuracy_score(y_true, y_pred),
-                f1=f1_score(y_true, y_pred),
-                precision=precision_score(y_true, y_pred),
-                recall=recall_score(y_true, y_pred),
+                f1=f1_score(y_true, y_pred, **kwargs),
+                precision=precision_score(y_true, y_pred, **kwargs),
+                recall=recall_score(y_true, y_pred, **kwargs),
             )
 
     @staticmethod
@@ -815,6 +816,15 @@ class DecisionTreeModel(BaseBinaryClassifierModel):
         param_search_models =[
         (DecisionTreeClassifier, dict(max_depth=range(2, 23, 2), criterion=['gini', 'entropy'],
                                       min_samples_split=range(2, 20, 1)))]
+
+class FeatureImportances(OpVertex):
+    def run(self, model_res):
+        m, perf, preds = model_res
+        input_op = self.get_input_ops()[0]
+        self.feature_importances = pd.Series(m.feature_importances_,
+                                             index=input_op.features,
+                                             name=self.get_name())
+        return self.feature_importances
 
 
 class BootstrapFeatureImportances(OpVertex):
