@@ -428,11 +428,224 @@ class OpVertex(object):
         viz_out.append_display_data("op_nb_viz not implemented!")
         return viz_out
 
+import attr
 
+@attr.s
+class OpVertexAttr(object):
+    _never_cache = attr.ib(False)
+    def __attrs_post_init__(self):
+        obj = self
+
+        # TODO: align %args with ordered dict args
+
+        # For parameters:
+        #   (1) An attribute stores the full (Base)Parameter Instance
+        #       - store under parameters
+        #   (2) The value of each parameter is assigned to self
+
+        # Filled out during build call
+        #obj._built = False
+        #obj.req_hash = None
+        obj._unpack_ops = set()
+        obj.unpack_output = False
+        obj._downstream = dict()
+
+        obj._dag = None
+        fields = attr.fields(self.__class__)
+        self.parameters_ = {f.name: getattr(self, f.name) for f in fields}
+        #obj._user_args = args
+        #if len(obj._user_args) > 0:
+        #    raise ValueError("Ops do not currently support non-keyword constructor arguments")
+
+        #obj._user_kwargs = kwargs
+        #obj._parameters = obj.scan_for_op_parameters(overrides=obj._user_kwargs)
+        #obj._runtime_parameters = {k:v for k, v in obj._parameters.items() if v.runtime}
+        #obj._name = kwargs.get('name', None)
+
+        #for p_n, p, in obj._parameters.items():
+        #    setattr(obj, p_n, p.value)
+
+        obj._cacheable = not obj._never_cache
+
+        return obj
+
+    def __call__(self, *args, **kwargs):
+        return self.apply(*args, **kwargs)
+
+    def __repr__(self):
+        params = self.get_parameters()
+        repr = ", ".join("%s=%s" % (str(k), str(params[k]))
+                        for k in sorted(params.keys()))
+        if self._name is not None:
+            repr += ', name=\'' + self._name + '\''
+        return self.__class__.__name__ + "(" + repr + ")"
+        #return self._name + "(" + repr + ")"
+
+    def __hash__(self):
+        p_tuples = tuple([(k, repr(self._parameters[k]))
+                          for k in sorted(self._parameters.keys())])
+        #r_tuples = tuple([(k, repr(self._requirements[k]))
+        #                  for k in sorted(self._requirements.keys())])
+        if self.req_hash is not None:
+            r = self.req_hash
+        else:
+            r = self.requires.__func__
+
+        return hash((type(self), p_tuples, r))
+        #return hash((self.unique_cls_name, p_tuples, r_tuples))
+
+    def _req_match(self, other):
+        return self.requires.__func__ == other.requires.__func__
+
+    def _param_match(self, other):
+        self_params = self.get_parameters()
+        other_params = other.get_parameters()
+
+        if len(self_params) != len(other_params):
+            return False
+
+        for p_k, p_v in self_params.items():
+            if p_k not in other_params:
+                return False
+
+            if not(p_v == other_params[p_k]):
+                return False
+
+        return True
+
+    def __hash__eq__(self, other):
+        return hash(self) == hash(other)
+
+    def __eq__(self, other):
+        if not isinstance(other, OpVertex) and not issubclass(type(other), OpVertex):
+            return False
+
+        if not self._param_match(other):
+            return False
+
+        if not self._req_match(other):
+            return False
+
+        if not isinstance(self, type(other)):# and not issubclass(type(self), type(other)):
+            return False
+
+        return True
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def _set_dag(self, dag):
+        from dsdag.core.dag import DAG
+        if not isinstance(dag, DAG) or not issubclass(type(dag), DAG):
+            msg = "Expected a DAG object or derived, got %s" % str(type(dag))
+            raise ValueError(msg)
+        self._dag = dag
+
+    def _node_color(self):
+        return 'lightblue2'
+
+    def _node_style(self):
+        return 'filled'
+
+    def _node_shape(self):
+        return 'oval'
+
+    def _get_viz_attrs(self):
+        return dict(color=self._node_color(),
+                    style=self._node_style(),
+                    shape=self._node_shape())
+
+    def set_downstream(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+            self._downstream[k] = v
+
+        return self
+
+    def get_logger(self, log_level='WARN'):
+        if self._dag is not None:
+            l = self._dag.get_op_logger(self)
+        else:
+            l = logging.getLogger()
+            l.setLevel(log_level)
+        return l
+
+    def set_unpack_input(self, op):
+        self._unpack_ops.add(op)
+        return op
+
+    def unset_unpack_input(self, op):
+        if op in self._unpack_ops:
+            self._unpack_ops.remove(op)
+        return op
+
+    def is_unpack_required(self, op):
+        return op in self._unpack_ops
+
+    def set_name(self, name):
+        self._name = name
+
+    def get_name(self):
+        #return self._name if self._name is not None else self.unique_cls_name
+        return self._name if self._name is not None else self.__class__.__name__
+
+    def set_cacheable(self, is_cacheable):
+        self._cacheable = is_cacheable
+
+    def get_input_ops(self):
+        return self._dag.get_op_input(self)
+
+    def apply(self, *args, **kwargs):
+        if len(kwargs) == 0 and len(args) == 0:
+            return self
+        elif len(kwargs) != 0:
+            from dsdag.ext.misc import VarOp
+            req_ret = kwargs
+            req_hash = hash(tuple((k, v if isinstance(v, OpVertex) or issubclass(v.__class__, OpVertex) else VarOp(obj=v))
+                        for k, v in kwargs.items()))
+        elif len(args) != 0:
+            from dsdag.ext.misc import VarOp
+            req_ret = list(args)
+            req_ret = [a if isinstance(a, OpVertex) or issubclass(a.__class__, OpVertex)
+                       else VarOp(obj=a)
+                       for a in req_ret]
+            req_hash = hash(tuple(req_ret))
+
+        else:
+            msg = "Mix of *args and **kwargs not supported (yet?)"
+            raise ValueError(msg)
+
+        for r in req_ret:
+            if hasattr(r, '_downstream'):
+                self.set_downstream(**r._downstream)
+
+        if req_hash not in self.__class__._closure_map:
+            def closure(self):
+                return req_ret
+            self.__class__._closure_map[req_hash] = closure
+
+        # Use descriptor protocol: https://docs.python.org/2/howto/descriptor.html
+        #self.requires = closure.__get__(self)
+        self.req_hash = req_hash
+        self.requires = self.__class__._closure_map[self.req_hash].__get__(self)
+
+        return self
+
+
+    def requires(self):
+        return dict()
+
+    def run(self):
+        raise NotImplementedError("Implement run")
 
 class UpackingOp(OpVertex):
     pass
 
 ##############
 if __name__ == """__main__""":
-    pass
+    @attr.s
+    class Foo(OpVertexAttr):
+        x = attr.ib(5)
+        y = attr.ib(10)
+
+    foo = Foo(x=66)
