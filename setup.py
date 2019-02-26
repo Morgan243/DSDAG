@@ -6,6 +6,7 @@ setup(name='dsdag',
       author='Morgan Stuart',
       packages=['dsdag', 'dsdag/core', 'dsdag/ext'],#['dsdag', 'projects'],
       install_requires=['toposort', 'imblearn', 'sklearn',
-                        'pandas', 'numpy', 'pydot', 'dask'],
+                        'pandas', 'numpy', 'pydot', 'graphviz', 'dask',
+                        'matplotlib', 'tqdm', 'psutil'],
       zip_safe=False
       )
