@@ -373,7 +373,7 @@ class DAG(object):
                                     # DAG is set to read from cache
                                    and self.read_from_cache
                                     # Proces is in the cache (check dict or IDT)
-                                   and process_name in self.cache or process in self.cache)
+                                   and (process_name in self.cache or process in self.cache))
                 if load_from_cache:
                     if not self.pbar:
                         self.logger.info("%s Will use cached output of %s"
