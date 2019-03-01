@@ -41,8 +41,14 @@ class DAG(object):
             log_level = DAG._default_log_level
 
         if logger is None:
+
             logger = logging.getLogger(name='DSDAG')
             logger.setLevel(log_level)
+            #ch = logging.StreamHandler()
+            #ch.setLevel(log_level)
+            #formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            #ch.setFormatter(log_level)
+            #logger.addHandler(ch)
 
         self.logger = logger
         self.log_level = log_level
