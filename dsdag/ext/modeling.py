@@ -1,5 +1,6 @@
 import uuid
-from dsdag.core.op import OpVertex
+from dsdag.core.op import OpVertexAttr as OpVertex
+from dsdag.core.op import opvertex, opattr
 from dsdag.core.parameter import BaseParameter, DatetimeParameter, UnhashableParameter, RepoTreeParameter
 import pandas as pd
 import numpy as np
@@ -290,17 +291,18 @@ class DT_Explain():
                         ] + list(ufuncs.keys())
         return mask_df[col_ordering]
 
+@opvertex
 class BoostedBinaryClassifier(BaseWrangler):
-    model_class = BaseParameter(DecisionTreeClassifier)
-    model_param_grid = BaseParameter(None)
+    model_class = opattr(DecisionTreeClassifier)
+    model_param_grid = opattr(None)
     #model_param_grid = BaseParameter(dict(max_depth=range(2, 23, 2), criterion=['gini', 'entropy'],
     #                                  min_samples_split=range(2, 20, 1)))
-    target = BaseParameter(None, help_msg='String column name of the target df column')
-    features = BaseParameter(None, help_msg='List of string column names of the feature columns'
+    target = opattr(None, help_msg='String column name of the target df column')
+    features = opattr(None, help_msg='List of string column names of the feature columns'
                                             'If None, all columns minus target are used')
-    n_jobs = BaseParameter(8, help_msg='Number of processes to use with Joblib in sklearn GridSearch')
-    resample = BaseParameter(True, help_msg="Whether to use imblearn's random rebalancing")
-    train_mode = BaseParameter(True, help_msg="Set False to use what model???")
+    n_jobs = opattr(8, help_msg='Number of processes to use with Joblib in sklearn GridSearch')
+    resample = opattr(True, help_msg="Whether to use imblearn's random rebalancing")
+    train_mode = opattr(True, help_msg="Set False to use what model???")
     scorer_map = dict(
         f1=f1_score,
         accuracy=accuracy_score,
@@ -309,18 +311,18 @@ class BoostedBinaryClassifier(BaseWrangler):
         mathews=matthews_corrcoef,
         roc=roc_auc_score
     )
-    model_name = BaseParameter("binary_classifier_%s" % str(uuid.uuid4()).replace('-', '_'))
+    model_name = opattr("binary_classifier_%s" % str(uuid.uuid4()).replace('-', '_'))
     #model_rt = RepoTreeParameter(None)#UnhashableParameter(None)
-    model_rt = UnhashableParameter(None)
-    performance_metric = BaseParameter('f1',
+    model_rt = opattr(None)
+    performance_metric = opattr('f1',
                                        help_msg="One of {"  + ", ".join(sorted(scorer_map.keys())) + "}")
                                        #help_msg="One of {'f1', 'accuracy', 'precision', 'recall', 'mathews'}")
-    performance_metric_kwargs = BaseParameter(dict(average='binary'),
+    performance_metric_kwargs = opattr(dict(average='binary'),
                                                help_msg="performance metric kwargs")
-    comp_key = BaseParameter(None, "Set the key/index for output scores and other metrics")
-    scoring_model_name = BaseParameter(None)
-    score_series_name = BaseParameter('proba')
-    return_model = BaseParameter(False, help_msg="Return the model rather than results")
+    comp_key = opattr(None, help_msg="Set the key/index for output scores and other metrics")
+    scoring_model_name = opattr(None)
+    score_series_name = opattr('proba')
+    return_model = opattr(False, help_msg="Return the model rather than results")
 
     def _node_color(self):
         return '#fc6220'
@@ -523,7 +525,7 @@ class BaseBinaryClassifierModel(BaseWrangler):
     #model_rt = RepoTreeParameter(None)
     model_rt = UnhashableParameter(None)
     scoring_model_name = BaseParameter(None)
-    comp_key = BaseParameter(None, "Set the key/index for output scores and other metrics")
+    comp_key = BaseParameter(None, help_msg="Set the key/index for output scores and other metrics")
     score_series_name = BaseParameter('proba')
 
     # WARN: Process assumes that higher scores are better
@@ -817,13 +819,21 @@ class DecisionTreeModel(BaseBinaryClassifierModel):
         (DecisionTreeClassifier, dict(max_depth=range(2, 23, 2), criterion=['gini', 'entropy'],
                                       min_samples_split=range(2, 20, 1)))]
 
+@opvertex
 class FeatureImportances(OpVertex):
+    series_name = opattr(None)
     def run(self, model_res):
-        m, perf, preds = model_res
-        input_op = self.get_input_ops()[0]
+        if isinstance(model_res, tuple) and len(model_res) == 3:
+            m, perf, preds = model_res
+
+            features = self.get_input_ops()[0].features
+        else:
+            m = model_res
+            features = None
+        m = getattr(m, 'best_estimator_', m)
         self.feature_importances = pd.Series(m.feature_importances_,
-                                             index=input_op.features,
-                                             name=self.get_name())
+                                             index=features,
+                                             name=self.get_name() if self.series_name is None else self.series_name)
         return self.feature_importances
 
 

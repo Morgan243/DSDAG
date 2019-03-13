@@ -430,9 +430,26 @@ class OpVertex(object):
 
 import attr
 
-@attr.s
-class OpVertexAttr(object):
-    _never_cache = attr.ib(False)
+def opattr(default=attr.NOTHING, validator=None,
+           #repr=True, cmp=True, hash=None,
+           init=True,
+           #convert=None,
+           metadata=None, type=None,
+           converter=None, factory=None,
+           kw_only=False, help_msg=None):
+    return attr.ib(default=default, validator=validator, repr=True, cmp=True, hash=None,
+                   init=init, convert=None, metadata=metadata, type=type, converter=converter,
+                   factory=factory, kw_only=kw_only)
+
+def opvertex(cls):
+    cls._name = opattr(cls.__name__, init=True, kw_only=True)
+    return attr.s(cls, cmp=False, these=None)
+
+#@attr.s(cmp=False)#frozen=True)#hash=True)
+class _OpVertexAttr(object):
+    _runtime_parameters = dict()#attr.ib(factory=dict, init=False)
+    _never_cache = False #attr.ib(False, init=False)
+    _closure_map = dict()
     def __attrs_post_init__(self):
         obj = self
 
@@ -453,6 +470,13 @@ class OpVertexAttr(object):
         obj._dag = None
         fields = attr.fields(self.__class__)
         self.parameters_ = {f.name: getattr(self, f.name) for f in fields}
+        import collections
+        from uuid import uuid4
+        self._param_hashable = tuple([(k, v if isinstance(v, collections.Hashable) else str(uuid4()))
+                                for k, v in self.get_parameters().items()])
+        self._req_hashable = self.requires.__func__ if isinstance(self.requires.__func__, collections.Hashable) else uuid4()
+        #self._op_hash = hash((type(self), self._param_hashable, self._req_hashable))
+
         #obj._user_args = args
         #if len(obj._user_args) > 0:
         #    raise ValueError("Ops do not currently support non-keyword constructor arguments")
@@ -481,18 +505,84 @@ class OpVertexAttr(object):
         return self.__class__.__name__ + "(" + repr + ")"
         #return self._name + "(" + repr + ")"
 
-    def __hash__(self):
+    @classmethod
+    def from_callable(cls, callable, input_arguments=[0], callable_name=None, never_cache=False):
+        import inspect
+        if callable_name is not None:
+            pass
+        elif hasattr(callable, '__name__'):
+            callable_name = callable.__name__
+        elif hasattr(callable, '__class__'):
+            callable_name = callable.__class__.__name__
+        else:
+            callable_name = str(callable)
+
+        try:
+            sig = inspect.signature(callable)
+        except ValueError as e:
+            print("Cannot obtain signature of %s" % callable_name)
+            sig = None
+
+        _attrs = dict()
+        if sig is not None:
+            for p_name, p in sig.parameters.items():
+                #print("%s=%s (kw_only=%s" % (p_name, str(p.default),
+                #                             str(p.kind == p.KEYWORD_ONLY)))
+                _attr = attr.ib(default=p.default, init=True,
+                                kw_only=p.kind == p.KEYWORD_ONLY)
+                _attrs[p_name] = _attr
+
+        _attr = attr.ib(default=callable_name, init=True,
+                        kw_only=True)
+        if 'name' in _attrs:
+            op_name_key = '_%s_name' % callable_name
+        else:
+            op_name_key = '_name'
+        _attrs[op_name_key] = _attr
+
+        tmp_cls = type(callable_name,
+                       (_OpVertexAttr,), _attrs)
+        #tmp_cls._name = callable_name
+        _op = tmp_cls
+
+        #_op = attr.make_class(callable.__name__, _attrs,
+                              #bases=(tmp_cls,))
+        #                      bases=(_OpVertexAttr,))
+
+        attr.s(_op, cmp=False, these=None)
+        if sig is not None:
+            pos_inputs = [ia for ia in input_arguments if isinstance(ia, int)]
+            kw_inputs = [ia for ia in input_arguments if ia not in pos_inputs]
+            def _run(s, *args, **kwargs):
+                _kwargs = {k: kwargs.get(k, getattr(s, k))
+                           for i, (k, v) in enumerate(sig.parameters.items())
+                            if i not in pos_inputs}
+                if len(args) != len(pos_inputs):
+                    print("Appears to be missing positional arguments")
+                    print("Expected %d args" % len(pos_inputs))
+                    print("But Got %d args" % len(args))
+                #_kwargs.update({k:kwargs[k] for k in kw_inputs })
+                #_args = [a for i, a in enumerate(args)]
+
+                return callable(*args, **_kwargs)
+        else:
+            def _run(s, *_args, **_kwargs): return callable(*_args, **_kwargs)
+        setattr(_op, 'run', _run)
+        return _op
+
+    def old__hash__(self):
         p_tuples = tuple([(k, repr(self._parameters[k]))
                           for k in sorted(self._parameters.keys())])
-        #r_tuples = tuple([(k, repr(self._requirements[k]))
-        #                  for k in sorted(self._requirements.keys())])
         if self.req_hash is not None:
             r = self.req_hash
         else:
             r = self.requires.__func__
 
         return hash((type(self), p_tuples, r))
-        #return hash((self.unique_cls_name, p_tuples, r_tuples))
+
+    def __hash__(self):
+        self._op_hash = hash((type(self), self._param_hashable, self._req_hashable))
+        return self._op_hash
 
     def _req_match(self, other):
         return self.requires.__func__ == other.requires.__func__
@@ -512,27 +602,6 @@ class OpVertexAttr(object):
                 return False
 
         return True
-
-    def __hash__eq__(self, other):
-        return hash(self) == hash(other)
-
-    def __eq__(self, other):
-        if not isinstance(other, OpVertex) and not issubclass(type(other), OpVertex):
-            return False
-
-        if not self._param_match(other):
-            return False
-
-        if not self._req_match(other):
-            return False
-
-        if not isinstance(self, type(other)):# and not issubclass(type(self), type(other)):
-            return False
-
-        return True
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
 
     def _set_dag(self, dag):
         from dsdag.core.dag import DAG
@@ -595,19 +664,36 @@ class OpVertexAttr(object):
     def get_input_ops(self):
         return self._dag.get_op_input(self)
 
+    def map(self, ops, suffix='map'):
+        #return [copy(self)(o) for o in ops]
+        return [self.new(name='%s__%s%d' %(self.get_name(), suffix,  i))(o)
+                for i, o in enumerate(ops)]
+
+    def new(self, name=None):
+        from copy import copy, deepcopy
+        c = deepcopy(self)
+        c.set_name(name=name)
+        return c
+
+
     def apply(self, *args, **kwargs):
+        cls = (OpVertexAttr, _OpVertexAttr)
         if len(kwargs) == 0 and len(args) == 0:
             return self
         elif len(kwargs) != 0:
             from dsdag.ext.misc import VarOp
+            # var and input are basically the same?
+            auto_op = lambda _obj: VarOp(obj=_obj) if not isinstance(_obj, collections.Hashable) else InputOp(obj=_obj)
             req_ret = kwargs
-            req_hash = hash(tuple((k, v if isinstance(v, OpVertex) or issubclass(v.__class__, OpVertex) else VarOp(obj=v))
+            req_hash = hash(tuple((k, v if isinstance(v, cls) or issubclass(v.__class__, cls) else auto_op(v))
                         for k, v in kwargs.items()))
         elif len(args) != 0:
-            from dsdag.ext.misc import VarOp
+            from dsdag.ext.misc import VarOp, InputOp
+            # var and input are basically the same?
+            auto_op = lambda _obj: VarOp(obj=_obj) if not isinstance(_obj, collections.Hashable) else InputOp(obj=_obj)
             req_ret = list(args)
-            req_ret = [a if isinstance(a, OpVertex) or issubclass(a.__class__, OpVertex)
-                       else VarOp(obj=a)
+            req_ret = [a if isinstance(a, cls) or issubclass(a.__class__, cls)
+                       else auto_op(a)
                        for a in req_ret]
             req_hash = hash(tuple(req_ret))
 
@@ -626,17 +712,46 @@ class OpVertexAttr(object):
 
         # Use descriptor protocol: https://docs.python.org/2/howto/descriptor.html
         #self.requires = closure.__get__(self)
-        self.req_hash = req_hash
-        self.requires = self.__class__._closure_map[self.req_hash].__get__(self)
+        #self.req_hash = req_hash
+        self._req_hashable = req_hash
+        self.requires = self.__class__._closure_map[self._req_hashable].__get__(self)
 
         return self
 
+    def get_parameters(self):
+        return self.parameters_
 
     def requires(self):
         return dict()
 
     def run(self):
         raise NotImplementedError("Implement run")
+
+    def build(self,
+              read_from_cache=False,
+              write_to_cache=False,
+              cache=None,
+              cache_eviction=False,
+              force_downstream_rerun=True,
+              pbar=True,
+              live_browse=False,
+              logger=None):
+
+        from dsdag.core.dag import DAG
+        return DAG(required_outputs=self,
+                   read_from_cache=read_from_cache,
+                   write_to_cache=write_to_cache,
+                   cache=cache,
+                   cache_eviction=cache_eviction,
+                   force_downstream_rerun=force_downstream_rerun,
+                   pbar=pbar,
+                   live_browse=live_browse,
+                   logger=logger)
+
+
+@opvertex
+class OpVertexAttr(_OpVertexAttr):
+    pass
 
 class UpackingOp(OpVertex):
     pass

@@ -59,13 +59,17 @@ class HistMulti(OpVertex):
             return ax
 
 from matplotlib.mlab import griddata
-class ContourPlot(OpVertex):
-    sample_ixes = BaseParameter(None)
-    title = BaseParameter('')
-    bands = BaseParameter(None)
-    value_column = BaseParameter(None)
-    dot_color_column = BaseParameter(None)
-    cbar = BaseParameter(False)
+from dsdag.core.op import OpVertexAttr, opvertex, opattr
+from dsdag.core.op import opattr as parameter
+
+@opvertex
+class ContourPlot(OpVertexAttr):
+    sample_ixes = parameter(None)
+    title = parameter('')
+    bands = parameter(None)
+    value_column = parameter(None)
+    dot_color_column = parameter(None)
+    cbar = parameter(False)
 
     _never_cache = True
 
