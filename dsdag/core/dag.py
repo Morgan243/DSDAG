@@ -41,16 +41,7 @@ class DAG(object):
             log_level = DAG._default_log_level
 
         if logger is None:
-
-            logger = logging.getLogger(name='DSDAG')
-            logger.setLevel(log_level)
-            #logger.addHandler(logging.StreamHandler())
-
-            ch = logging.StreamHandler()
-            ch.setLevel(log_level)
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-            ch.setFormatter(formatter)
-            logger.addHandler(ch)
+            logger = self._create_dag_logger('DAG', log_level)
 
         self.logger = logger
         self.log_level = log_level
@@ -137,6 +128,24 @@ class DAG(object):
     def __getitem__(self, item):
         return self.completed_ops.get(item, self.name_to_op_map[item])
 
+    def _create_dag_logger(self, name, log_level):
+        logger = logging.getLogger(name=name)
+        logger.setLevel(log_level)
+
+        # Don't add extra handlers - will see duplicated outputs
+        if len(logger.handlers) == 0:
+            # let the logger fitler - stream should output anything it gets (for now...)
+            # In future, allow finer grained control - per op basis?
+            handler_level = 'DEBUG'
+            self._log_stream_handler = getattr(self, '_log_stream_handler',
+                                               logging.StreamHandler())
+            self._log_stream_handler.setLevel(handler_level)
+            self._log_formatter = getattr(self, '_log_formatter',
+                                          logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+            self._log_stream_handler.setFormatter(self._log_formatter)
+            logger.addHandler(self._log_stream_handler)
+        return logger
+
     def _ipython_key_completions_(self):
         return list(self.name_to_op_map.keys())
 
@@ -149,8 +158,7 @@ class DAG(object):
 
     def get_op_logger(self, op):
         if op not in self.op_loggers:
-            l = logging.getLogger(op.get_name())
-            l.setLevel(self.log_level)
+            l = self._create_dag_logger(self.get_dag_unique_op_name(op), self.log_level)
             self.op_loggers[op] = l
         return self.op_loggers[op]
 
@@ -534,8 +542,10 @@ class DAG(object):
             return dot
         else:
             from IPython.display import Image, display
+            import uuid
             img_name = dot.render(cleanup=True,
-                                  directory=tempfile.gettempdir())
+                                  directory=tempfile.gettempdir(),
+                                  filename=str(uuid.uuid4()))
 
             display(Image(filename=img_name))
 
