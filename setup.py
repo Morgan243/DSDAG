@@ -7,6 +7,6 @@ setup(name='dsdag',
       packages=['dsdag', 'dsdag/core', 'dsdag/ext'],#['dsdag', 'projects'],
       install_requires=['toposort', 'imblearn', 'sklearn',
                         'pandas', 'numpy', 'pydot', 'graphviz', 'dask',
-                        'matplotlib', 'tqdm', 'psutil'],
+                        'matplotlib', 'tqdm', 'psutil', 'attrs', 'ipywidgets'],
       zip_safe=False
       )
