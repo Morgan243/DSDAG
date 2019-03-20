@@ -13,6 +13,22 @@ try:
 except ImportError as e:
     pandas = None
 
+def from_module(mod, post_call_func=None, input_arguments=None, eager_call=False, name_suffix='', verbose=False):
+    _ops = dict()
+    for dname, d in ((dname, getattr(mod, dname)) for dname in dir(mod)):
+        ia = input_arguments.get(dname) if isinstance(input_arguments, dict) else input_arguments
+        try:
+            _ops[dname] = dsdag.core.op.OpVertexAttr.from_callable(d,
+                                                                   post_call_func=post_call_func,
+                                                                   callable_name=dname+name_suffix,
+                                                                   input_arguments=ia,
+                                                                   eager_call=eager_call)
+        except:
+            if verbose:
+                print("Could not Opify %s" % dname)
+            pass
+    return type('pd_ops', (object,), _ops )
+
 if pandas is not None:
     _pd_ops = dict()
     for dname, d in ((dname, getattr(pandas, dname)) for dname in dir(pandas)):

@@ -476,7 +476,7 @@ class BoostedBinaryClassifier(BaseWrangler):
     def cv_param_search(model, X, y,
                         param_grid,
                         scorer='f1', verbose=1,
-                        n_jobs=4):
+                        n_jobs=4, cv=5):
         try:
             _scorer = BaseBinaryClassifierModel.scorer_map[scorer]
         except KeyError:
@@ -488,7 +488,7 @@ class BoostedBinaryClassifier(BaseWrangler):
         cv = GridSearchCV(estimator=model, param_grid=param_grid,
                           scoring=make_scorer(_scorer),
                           verbose=verbose, n_jobs=n_jobs,
-                          pre_dispatch=n_jobs)
+                          pre_dispatch=n_jobs, cv=cv)
         cv_res = cv.fit(X, y)
         return cv_res
 
@@ -822,6 +822,7 @@ class DecisionTreeModel(BaseBinaryClassifierModel):
 @opvertex
 class FeatureImportances(OpVertex):
     series_name = opattr(None)
+    features = opattr(None)
     def run(self, model_res):
         if isinstance(model_res, tuple) and len(model_res) == 3:
             m, perf, preds = model_res
@@ -829,7 +830,7 @@ class FeatureImportances(OpVertex):
             features = self.get_input_ops()[0].features
         else:
             m = model_res
-            features = None
+            features = self.features
         m = getattr(m, 'best_estimator_', m)
         self.feature_importances = pd.Series(m.feature_importances_,
                                              index=features,

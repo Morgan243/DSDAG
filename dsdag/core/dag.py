@@ -96,7 +96,7 @@ class DAG(object):
 
         self.op_name_counts = dict()# Counter(o.get_name() for o in self.all_ops.values())
         self.op_suffixes = dict()
-        self.all_ops, self.dep_map = self.build(self.required_outputs)
+        self.all_ops, self.dep_map, self.input_op_map = self.build(self.required_outputs)
 
 
         self.runtime_parameters = dict()
@@ -128,8 +128,12 @@ class DAG(object):
         self.start_and_finish_times = dict()
         self.all_requirements = [d for t in self.topology for d in t]
         self.completed_ops = dict()
+        self._call_args = None
+        self._call_kwargs = None
 
     def __call__(self, *args, **kwargs):
+        self._call_args = args
+        self._call_kwargs = kwargs
         return self.run_dag(*args, **kwargs)
 
     def __getitem__(self, item):
@@ -160,6 +164,7 @@ class DAG(object):
         deps_to_resolve = required_outputs
         dep_map = dict()
         all_ops = dict()
+        input_op_map = dict()
         # Iterate rather than recurse
         # deps_to_resolve treated like a FIFO queue
         while len(deps_to_resolve) > 0:
@@ -231,7 +236,9 @@ class DAG(object):
                     msg = "Found unsupported Op dependency object %s" % type(o)
                     raise ValueError(msg)
 
-        return all_ops, dep_map
+        import dsdag
+        input_op_map = {k: o for k, o in all_ops.items() if isinstance(o, dsdag.ext.misc.InputOp)}
+        return all_ops, dep_map, input_op_map
 
     def exec_process(self, process,
                      tpid,
@@ -380,6 +387,9 @@ class DAG(object):
                                    and self.read_from_cache
                                     # Proces is in the cache (check dict or IDT)
                                    and (process_name in self.cache or process in self.cache))
+                if process in self.input_op_map:
+                    pass
+
                 if load_from_cache:
                     if not self.pbar:
                         self.logger.info("%s Will use cached output of %s"

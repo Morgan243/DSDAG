@@ -5,7 +5,9 @@ from dsdag.core.op import opattr, opvertex
 import dsdag
 
 
-
+Collect = OpVertex.from_callable(lambda *args, **kwargs: list(args),
+                                 callable_name='collect',
+                                 input_arguments=[])
 
 @opvertex
 class InputOp(OpVertex):

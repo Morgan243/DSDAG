@@ -506,8 +506,10 @@ class _OpVertexAttr(object):
         #return self._name + "(" + repr + ")"
 
     @classmethod
-    def from_callable(cls, callable, input_arguments=[0], callable_name=None, never_cache=False):
+    def from_callable(cls, callable, post_call_func=None, input_arguments=[0], eager_call=False,
+                      callable_name=None, never_cache=False):
         import inspect
+        input_arguments = list() if input_arguments is None else input_arguments
         if callable_name is not None:
             pass
         elif hasattr(callable, '__name__'):
@@ -520,7 +522,7 @@ class _OpVertexAttr(object):
         try:
             sig = inspect.signature(callable)
         except ValueError as e:
-            print("Cannot obtain signature of %s" % callable_name)
+            #print("Cannot obtain signature of %s" % callable_name)
             sig = None
 
         _attrs = dict()
@@ -545,12 +547,8 @@ class _OpVertexAttr(object):
         #tmp_cls._name = callable_name
         _op = tmp_cls
 
-        #_op = attr.make_class(callable.__name__, _attrs,
-                              #bases=(tmp_cls,))
-        #                      bases=(_OpVertexAttr,))
-
         attr.s(_op, cmp=False, these=None)
-        if sig is not None:
+        if sig is not None and post_call_func is None:
             pos_inputs = [ia for ia in input_arguments if isinstance(ia, int)]
             kw_inputs = [ia for ia in input_arguments if ia not in pos_inputs]
             def _run(s, *args, **kwargs):
@@ -565,6 +563,37 @@ class _OpVertexAttr(object):
                 #_args = [a for i, a in enumerate(args)]
 
                 return callable(*args, **_kwargs)
+        elif post_call_func is not None:
+            pos_inputs = [ia for ia in input_arguments if isinstance(ia, int)]
+            kw_inputs = [ia for ia in input_arguments if ia not in pos_inputs]
+
+            if eager_call:
+                def _run(s, *args, **kwargs):
+                    _kwargs = {k: getattr(s, k)
+                               for i, (k, v) in enumerate(sig.parameters.items())
+                                if i not in pos_inputs}
+                    #if len(args) != len(pos_inputs):
+                    #    print("Appears to be missing positional arguments")
+                    #    print("Expected %d args" % len(pos_inputs))
+                    #    print("But Got %d args" % len(args))
+                    #_kwargs.update({k:kwargs[k] for k in kw_inputs })
+                    _args = [getattr(s, k) for i, k in enumerate(sig.parameters.keys()) if i in pos_inputs]
+
+                    s.call_results = getattr(s, 'call_results', callable_name(*_args, **_kwargs))
+                    return post_call_func(s, s.call_results , *args, **kwargs)
+            else:
+                def _run(s, *args, **kwargs):
+                    _kwargs = {k: getattr(s, k)
+                               for i, (k, v) in enumerate(sig.parameters.items())
+                                if i not in pos_inputs}
+                    #if len(args) != len(pos_inputs):
+                    #    print("Appears to be missing positional arguments")
+                    #    print("Expected %d args" % len(pos_inputs))
+                    #    print("But Got %d args" % len(args))
+                    #_kwargs.update({k:kwargs[k] for k in kw_inputs })
+                    _args = [getattr(s, k) for i, k in enumerate(sig.parameters.keys()) if i in pos_inputs]
+
+                    return post_call_func(s, (callable, _args, _kwargs), *args, **kwargs)
         else:
             def _run(s, *_args, **_kwargs): return callable(*_args, **_kwargs)
         setattr(_op, 'run', _run)
@@ -681,7 +710,7 @@ class _OpVertexAttr(object):
         if len(kwargs) == 0 and len(args) == 0:
             return self
         elif len(kwargs) != 0:
-            from dsdag.ext.misc import VarOp
+            from dsdag.ext.misc import VarOp, InputOp
             # var and input are basically the same?
             auto_op = lambda _obj: VarOp(obj=_obj) if not isinstance(_obj, collections.Hashable) else InputOp(obj=_obj)
             req_ret = kwargs
