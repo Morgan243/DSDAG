@@ -6,6 +6,7 @@ import types
 import interactive_data_tree as idt
 import time
 import logging
+import inspect
 import pandas as pd
 
 from dsdag.core.parameter import BaseParameter, UnhashableParameter
@@ -445,53 +446,43 @@ def opvertex(cls):
     cls._name = opattr(cls.__name__, init=True, kw_only=True)
     return attr.s(cls, cmp=False, these=None)
 
+import collections
+from uuid import uuid4
 #@attr.s(cmp=False)#frozen=True)#hash=True)
 class _OpVertexAttr(object):
     _runtime_parameters = dict()#attr.ib(factory=dict, init=False)
     _never_cache = False #attr.ib(False, init=False)
     _closure_map = dict()
-    def __attrs_post_init__(self):
-        obj = self
 
-        # TODO: align %args with ordered dict args
-
+    @staticmethod
+    def __post_init__(obj):
         # For parameters:
         #   (1) An attribute stores the full (Base)Parameter Instance
         #       - store under parameters
         #   (2) The value of each parameter is assigned to self
 
         # Filled out during build call
-        #obj._built = False
-        #obj.req_hash = None
         obj._unpack_ops = set()
         obj.unpack_output = False
         obj._downstream = dict()
 
         obj._dag = None
-        fields = attr.fields(self.__class__)
-        self.parameters_ = {f.name: getattr(self, f.name) for f in fields}
-        import collections
-        from uuid import uuid4
-        self._param_hashable = tuple([(k, v if isinstance(v, collections.Hashable) else str(uuid4()))
-                                for k, v in self.get_parameters().items()])
-        self._req_hashable = self.requires.__func__ if isinstance(self.requires.__func__, collections.Hashable) else uuid4()
-        #self._op_hash = hash((type(self), self._param_hashable, self._req_hashable))
-
-        #obj._user_args = args
-        #if len(obj._user_args) > 0:
-        #    raise ValueError("Ops do not currently support non-keyword constructor arguments")
-
-        #obj._user_kwargs = kwargs
-        #obj._parameters = obj.scan_for_op_parameters(overrides=obj._user_kwargs)
-        #obj._runtime_parameters = {k:v for k, v in obj._parameters.items() if v.runtime}
-        #obj._name = kwargs.get('name', None)
-
-        #for p_n, p, in obj._parameters.items():
-        #    setattr(obj, p_n, p.value)
+        fields = attr.fields(obj.__class__)
+        obj.parameters_ = {f.name: getattr(obj, f.name) for f in fields}
+        obj._param_hashable = tuple([(k, v if isinstance(v, collections.Hashable) else str(uuid4()))
+                                for k, v in obj.get_parameters().items()])
+        obj._req_hashable = obj.requires.__func__ if isinstance(obj.requires.__func__, collections.Hashable) else uuid4()
 
         obj._cacheable = not obj._never_cache
 
         return obj
+
+    def __attrs_post_init__(self):
+        obj = self
+        return _OpVertexAttr.__post_init__(obj)
+
+        # TODO: align %args with ordered dict args
+
 
     def __call__(self, *args, **kwargs):
         return self.apply(*args, **kwargs)
@@ -506,10 +497,65 @@ class _OpVertexAttr(object):
         #return self._name + "(" + repr + ")"
 
     @classmethod
-    def from_callable(cls, callable, post_call_func=None, input_arguments=[0], eager_call=False,
+    def from_class(cls, class_to_op, callable_name=None, never_cache=False):
+        assert inspect.isclass(class_to_op)
+
+        if callable_name is not None:
+            pass
+        elif hasattr(class_to_op, '__name__'):
+            callable_name = class_to_op.__name__
+        elif hasattr(class_to_op, '__class__'):
+            callable_name = class_to_op.__class__.__name__
+        else:
+            callable_name = str(class_to_op)
+
+        try:
+            sig = inspect.signature(class_to_op)
+        except ValueError as e:
+            print("Cannot obtain signature of %s" % callable_name)
+            sig = None
+
+        _attrs = dict()
+        if sig is not None:
+            for p_name, p in sig.parameters.items():
+                _attr = attr.ib(default=p.default, init=True,
+                                kw_only=p.kind == p.KEYWORD_ONLY)
+                _attrs[p_name] = _attr
+
+        name_attr = attr.ib(default=callable_name, init=True,
+                            kw_only=True)
+        if 'name' in _attrs:
+            op_name_key = '_%s_name' % callable_name
+        else:
+            op_name_key = '_name'
+        _attrs[op_name_key] = name_attr
+        def _new_attrs_post_init(s):
+            s = _OpVertexAttr.__post_init__(s)
+            #s.__attrs_post_init__()
+            _kwargs = {k:  getattr(s, k)
+                       for i, (k, v) in enumerate(sig.parameters.items())}
+            s._obj = class_to_op(**_kwargs)
+
+        _attrs['__attrs_post_init__'] = _new_attrs_post_init
+
+        tmp_cls = type(callable_name,
+                       (_OpVertexAttr,), _attrs)
+        _op = tmp_cls
+
+        attr.s(_op, cmp=False, these=None)
+
+        setattr(_op, 'run', lambda s, *_args, **_kwargs: s._obj(*_args, **_kwargs))
+
+        return _op
+
+    @classmethod
+    def from_callable(cls, callable, post_call_func=None,
+                      input_arguments=[0], eager_call=False,
                       callable_name=None, never_cache=False):
-        import inspect
         input_arguments = list() if input_arguments is None else input_arguments
+
+        ###
+        # NAME
         if callable_name is not None:
             pass
         elif hasattr(callable, '__name__'):
@@ -556,9 +602,10 @@ class _OpVertexAttr(object):
                            for i, (k, v) in enumerate(sig.parameters.items())
                             if i not in pos_inputs}
                 if len(args) != len(pos_inputs):
-                    print("Appears to be missing positional arguments")
-                    print("Expected %d args" % len(pos_inputs))
-                    print("But Got %d args" % len(args))
+                    pass
+                    #print("Appears to be missing positional arguments")
+                    #print("Expected %d args" % len(pos_inputs))
+                    #print("But Got %d args" % len(args))
                 #_kwargs.update({k:kwargs[k] for k in kw_inputs })
                 #_args = [a for i, a in enumerate(args)]
 

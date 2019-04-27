@@ -2,6 +2,7 @@ import matplotlib
 from matplotlib import pyplot as plt
 from dsdag.core.parameter import BaseParameter
 from dsdag.core.op import OpVertex
+import numpy as np
 
 class Subplots(OpVertex):
     nrows=BaseParameter(1)
@@ -76,6 +77,8 @@ class ContourPlot(OpVertexAttr):
     @staticmethod
     def contour_plot(_s_df, value_column,
                      dot_color=None,
+                     levels=10,
+                     cmap=plt.cm.hsv,
                      vmin=None, vmax=None,
                      ax=None, cbar=False, title=''):
         if ax is None:
@@ -97,18 +100,20 @@ class ContourPlot(OpVertexAttr):
 
         vmax = abs(zi).max() if vmax is None else vmax
         vmin = -abs(zi).max() if vmin is None else vmin
+        zi = np.clip(zi, vmin, vmax)
 
-        ctr = ax.contourf(xi, yi, zi, 30,
-                          cmap=plt.cm.hsv,
+        ctr = ax.contourf(xi, yi, zi, levels,
+                          cmap=cmap,
                           vmax=vmax, vmin=vmin)
         if cbar:
             #plt.colorbar(mappable=ctr)
             plt.colorbar(ctr, ax=ax)
 
-        ax.scatter(x=_s_df['x'], y=_s_df['y'],
-                   cmap='gray', s=5,
-                   c=dot_color,
-                   )
+        #plt_s_df = _s_df.sort_values(value_column).tail(5)
+        #ax.scatter(x=plt_s_df['x'], y=plt_s_df['y'],
+        #           cmap='green', s=5, alpha=0.6,
+        #           c=dot_color,
+        #           )
 
         ax.set_title(title)
 
@@ -118,7 +123,8 @@ class ContourPlot(OpVertexAttr):
         value_column = self.value_column if value_column is None else value_column
         plt_df = df.dropna()
 
-        self.contour_plot(plt_df, value_column=value_column, title=self.title, ax=ax,
-                          dot_color=plt_df[value_column] if self.dot_color_column is None else plt_df[
-                              self.dot_color_column],
-                          cbar=self.cbar)
+        ax = self.contour_plot(plt_df, value_column=value_column, title=self.title, ax=ax,
+                              dot_color=plt_df[value_column] if self.dot_color_column is None else plt_df[
+                                  self.dot_color_column],
+                              cbar=self.cbar)
+        return ax
