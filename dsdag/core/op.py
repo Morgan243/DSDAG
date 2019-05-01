@@ -188,6 +188,7 @@ class OpVertex(object):
         return hash(self) == hash(other)
 
     def __eq__(self, other):
+
         if not isinstance(other, OpVertex) and not issubclass(type(other), OpVertex):
             return False
 
@@ -659,6 +660,9 @@ class _OpVertexAttr(object):
     def __hash__(self):
         self._op_hash = hash((type(self), self._param_hashable, self._req_hashable))
         return self._op_hash
+
+    def __eq__(self, other):
+        return hash(self) == hash(other)
 
     def _req_match(self, other):
         return self.requires.__func__ == other.requires.__func__

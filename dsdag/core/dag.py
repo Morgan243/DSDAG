@@ -182,6 +182,7 @@ class DAG(object):
             o = deps_to_resolve[0]
             deps_to_resolve = deps_to_resolve[1:]
             #####-----
+            # If Op already registered, move on
             if any(o == _o for _o in all_ops):
                 continue
 
@@ -198,6 +199,7 @@ class DAG(object):
             all_ops[o] = o
 
             try:
+                # Try producing the input Ops that need to be given to this Op
                 dep_map[o] = o.requires()
             except:
                 print("Error producing requires for %s" % o.get_name())
@@ -211,8 +213,12 @@ class DAG(object):
             elif isinstance(dep_map[o], dict):
                 deps_to_resolve += list(dep_map[o].values())
             else:
-                if not isinstance(dep_map[o], OpVertex) and not issubclass(type(dep_map[o]), OpVertex):
-                    raise ValueError("requires must return a list or dict of OpVertices or a single OpVertex")
+                from dsdag.core.op import OpVertexAttr
+                t = (OpVertex, OpVertexAttr)
+                if not isinstance(dep_map[o], t) and not issubclass(type(dep_map[o]), t):
+
+                    msg = "%s requires returned %s - Op requires must return a list or dict of OpVertices or a single OpVertex"
+                    raise ValueError(msg % (str(o), str(dep_map[o])))
                 # Treat single op returns like a list with only one element
                 dep_map[o] = [dep_map[o]]
                 deps_to_resolve += dep_map[o]
@@ -460,12 +466,12 @@ class DAG(object):
 
                         in_cache = (k.__class__.__name__ in self.cache or k in self.cache)
                         if k._cacheable and self.cache_eviction and in_cache:
-                            self.logger.debug("Removing unnecessary op from cache %s" % k.__class__.__name__)
+                            self.logger.debug("Removing unnecessary op from cache %s"
+                                              % k.__class__.__name__)
                             if isinstance(self.cache, idt.RepoTree):
                                 self.cache[k.__class__.__name__].delete('dag')
                             else:
                                 del self.cache[k]
-
 
         if self.pbar:
             self.tqdm_bar.close()
@@ -487,8 +493,18 @@ class DAG(object):
         else:
             return o
 
-    def get_dag_unique_op_name(self, o):
-        return o.get_name() + self.op_suffixes.get(o, '')
+    def get_dag_unique_op_name(self, o, on_missing='error'):
+        if on_missing == 'error':
+            #if o not in self.op_suffixes:
+            if o not in self.all_ops:
+                raise KeyError("Op %s not in DAG %s" % (str(o), str(self)))
+            n = o.get_name() + self.op_suffixes.get(o, '')
+        elif on_missing == 'ignore':
+           n = o.get_name() + self.op_suffixes.get(o, '')
+        else:
+            raise ValueError("on_missing parameter must be on of {'error', 'ignore'}, but got '%s'"
+                             % str(on_missing))
+        return n
 
     def clear_cache(self):
         self.logger.info("clearing cache")

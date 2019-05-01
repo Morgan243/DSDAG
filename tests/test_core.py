@@ -241,8 +241,9 @@ class TestDSDAGBuild(unittest.TestCase):
 
         op_a = CacheTestOpA()(10)
         op_b = CacheTestOpB()(op_a)
-        dag = LambdaOp(f=sum)(op_b).build(write_to_cache=True, read_from_cache=True,
-                                          logger='DEBUG')
+        dag = LambdaOp(f=lambda a, b: a+b)(op_b, op_b).build(write_to_cache=True,
+                                                             read_from_cache=True,
+                                                             logger='DEBUG')
         # First run
         res = dag()
         self.assertEqual(Canary.canary, 2)
