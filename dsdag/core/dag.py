@@ -4,6 +4,7 @@ import time
 from toposort import toposort
 import pandas as pd #TODO: this dep should not be in core dag
 from dsdag.core.op import OpVertex
+import inspect
 from collections import Counter
 
 class DAG(object):
@@ -319,6 +320,9 @@ class DAG(object):
                     msg = "The process %s (%s) has a missing dependency:" % (process_name,
                                                                              op.__class__.__name__)
                     msg += "%s=%s" % ("*arg[%d]" % _i, v.__class__.__name__)
+                    msg += "\n" + str(v)
+                    msg += "\n" + str(self.get_dag_unique_op_name(v))
+                    msg += "\n" + str(hash(v))
                     self.logger.error(msg=msg)
                     return -1
                 if isinstance(self.outputs[v], idt.RepoLeaf):
@@ -334,11 +338,51 @@ class DAG(object):
 
         return proc_args, proc_kwargs
 
+    def dependencies_in_cache(self, process):
+        process_name = self.get_dag_unique_op_name(process)
+
+        import inspect
+
+        src_hash = hash(inspect.getsource(process.__class__))
+
+        if isinstance(self.cache, dict) and process in self.cache:
+            process_in_cache = True
+        elif isinstance(self.cache, idt.RepoTree) and process_name in self.cache:
+            import hashlib
+            m = hashlib.sha256()
+            m.update(str(process).encode('utf-8'))
+            #m.update(str(process._req_hashable))
+            h = str(m.digest())
+
+            l = self.cache[process_name]
+            #process_src = inspect.getsource(process.__class__)
+            #for c_k, c_v in l.read_metadata()
+            cache_md = l.read_metadata()
+            hash_match = cache_md['op_hash'] == h
+
+            #params_match = cache_md.get('op_params', list()) == process._param_hashable
+            #src_match = cache_md.get('op_class_src_hash', 0) == hash(process_src)
+
+            # TODO: what if requires was different?
+            #process_in_cache = params_match and src_match
+            process_in_cache = hash_match
+        else:
+            process_in_cache = False
+
+
+        #process_in_cache = ((isinstance(self.cache, dict) and process in self.cache)
+        #                    or
+        #                    (isinstance(self.cache, idt.RepoTree)
+        #                     and process_name in self.cache
+        #                     and hash(process) == self.cache[process_name].md['op_hash']))
+        return process_in_cache
+
     def find_min_topology(self):#, ops, topology=[]):
-        dep_satisfied = lambda dep: (dep._cacheable and
-                                     self.using_cache and
-                                     self.cache is not None and
-                                    (dep in self.cache or dep.get_name() in self.cache))
+        #dep_satisfied = lambda dep: (dep._cacheable and
+        #                             self.using_cache and
+        #                             self.cache is not None and
+        #                            (dep in self.cache or dep.get_name() in self.cache))
+        #dep_satisfied = self.dependencies_in_cache()
 
         dep_map = dict()
         deps_to_resolve = list(self.required_outputs)
@@ -353,7 +397,7 @@ class DAG(object):
             # reqs can be kwargs or args (list)
             _iter_reqs = reqs.values() if isinstance(reqs, dict) else reqs
             # But only need to resolve those that are not satisfied already
-            deps_to_resolve += [r for r in _iter_reqs if not dep_satisfied(r)]
+            deps_to_resolve += [r for r in _iter_reqs if not self.dependencies_in_cache(r)]
 
 
         dep_sets = {p: set(d.values()) if isinstance(d, dict) else set(d)
@@ -392,6 +436,12 @@ class DAG(object):
                 dep_values = dependencies.values() if isinstance(dependencies, dict) else dependencies
 
                 tpid = "[%d.%d]" % (i, j)
+                #process_in_cache = ((isinstance(self.cache, dict) and process in self.cache)
+                #                    or
+                #                    (isinstance(self.cache, idt.RepoTree)
+                #                     and process_name in self.cache
+                #                     and hash(process) == self.cache[process_name].md['op_hash']))
+                process_in_cache = self.dependencies_in_cache(process)
                 load_from_cache = (process not in self.required_outputs  # always run specified vertices
                                    # Op is set to cacheable (default)
                                    and process._cacheable
@@ -402,7 +452,9 @@ class DAG(object):
                                     # DAG is set to read from cache
                                    and self.read_from_cache
                                     # Proces is in the cache (check dict or IDT)
-                                   and (process_name in self.cache or process in self.cache))
+                                   and process_in_cache
+                                   #and (process_name in self.cache or process in self.cache)
+                                   )
                 if process in self.input_op_map:
                     pass
 
@@ -451,10 +503,18 @@ class DAG(object):
                     if not self.pbar:
                         self.logger.info("Persisting output of %s" % process_name)
                     if isinstance(self.cache, idt.RepoTree):
+                        import hashlib
+                        m = hashlib.sha256()
+                        m.update(str(process).encode('utf-8'))
+                        #m.update(str(process._req_hashable))
+                        h = str(m.digest())
                         self.cache.save(self.outputs[process],
                                             name=process_name,
                                             author='dag',
-                                            param_names=list(proc_kwargs.keys()),
+                                        op_hash=h,
+                                            #param_names=list(proc_kwargs.keys()),
+                                        #op_params=process._param_hashable,
+                                        #op_class_src_hash=hash(inspect.getsource(process.__class__)),
                                             auto_overwrite=True)
                     elif isinstance(self.cache, dict):
                         self.cache[process] = self.outputs[process]

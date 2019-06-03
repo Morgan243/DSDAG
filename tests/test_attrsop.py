@@ -50,7 +50,17 @@ class AddOp(OpVertex):
 
 
 from pprint import pprint
+import tempfile
+import shutil
 class TestAttrsDAG(unittest.TestCase):
+    def setUp(self):
+        # Create a temporary directory
+        self.test_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        # Remove the directory after the test
+        shutil.rmtree(self.test_dir)
+
     def test_build(self):
         ret = DAG([AddOp(magic_num=11)])
         print(ret)
@@ -207,6 +217,58 @@ class TestAttrsDAG(unittest.TestCase):
 
         dag.clear_cache()
         self.assertEqual(len(dag.cache), 0)
+
+        ## Cache eviction
+        dag = LambdaOp(f=sum)(op_b).build(write_to_cache=True, read_from_cache=True,
+                                          cache_eviction=True, logger='DEBUG')
+        # First run
+        res = dag()
+        self.assertEqual(Canary.canary, 2)
+        Canary.canary = 0
+
+        res = dag()
+        self.assertEqual(Canary.canary, 0)
+
+
+    def test_idt_caching(self):
+        import interactive_data_tree as idt
+        cache_rt = idt.RepoTree(self.test_dir)
+#        cache_rt['LOG'].delete('test')
+#        cache_rt['INDEX'].delete('test')
+
+        @opvertex
+        class Canary(object):
+            canary = 0
+
+        @opvertex
+        class CacheTestOpA(OpVertex):
+            def run(self, x):
+                Canary.canary +=1
+                return [x*.5]
+
+        @opvertex
+        class CacheTestOpB(OpVertex):
+            def run(self, x):
+                Canary.canary +=1
+                return x*5
+
+        op_a = CacheTestOpA()(10)
+        op_b = CacheTestOpB()(op_a)
+        dag = LambdaOp(f=lambda a, b: a+b)(op_b, op_b).build(write_to_cache=True,
+                                                             read_from_cache=True,
+                                                             cache=cache_rt,
+                                                             logger='DEBUG')
+        # First run
+        res = dag()
+        self.assertEqual(Canary.canary, 2)
+        Canary.canary = 0
+
+        res = dag()
+        self.assertEqual(Canary.canary, 0)
+
+        dag.clear_cache()
+        # IDT will have a INDEX and LOG in them by default (for now)
+        self.assertEqual(len(dag.cache), 2)
 
         ## Cache eviction
         dag = LambdaOp(f=sum)(op_b).build(write_to_cache=True, read_from_cache=True,
