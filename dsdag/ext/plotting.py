@@ -59,7 +59,6 @@ class HistMulti(OpVertex):
         else:
             return ax
 
-from matplotlib.mlab import griddata
 from dsdag.core.op import OpVertexAttr, opvertex, opattr
 from dsdag.core.op import opattr as parameter
 
@@ -81,6 +80,8 @@ class ContourPlot(OpVertexAttr):
                      cmap=plt.cm.hsv,
                      vmin=None, vmax=None,
                      ax=None, cbar=False, title=''):
+
+        from matplotlib.mlab import griddata
         if ax is None:
             fig, ax = plt.subplots()
 
