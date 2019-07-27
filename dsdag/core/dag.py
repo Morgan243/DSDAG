@@ -343,7 +343,7 @@ class DAG(object):
 
         import inspect
 
-        src_hash = hash(inspect.getsource(process.__class__))
+        #src_hash = hash(inspect.getsource(process.__class__))
 
         if isinstance(self.cache, dict) and process in self.cache:
             process_in_cache = True
