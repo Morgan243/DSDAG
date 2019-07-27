@@ -259,6 +259,7 @@ class TestAttrsDAG(unittest.TestCase):
                                                              cache=cache_rt,
                                                              logger='DEBUG')
         # First run
+
         res = dag()
         self.assertEqual(Canary.canary, 2)
         Canary.canary = 0
