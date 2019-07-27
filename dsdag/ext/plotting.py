@@ -79,6 +79,7 @@ class ContourPlot(OpVertexAttr):
                      levels=10,
                      cmap=plt.cm.hsv,
                      vmin=None, vmax=None,
+                     alpha=1.,
                      ax=None, cbar=False, title=''):
 
         from matplotlib.mlab import griddata
@@ -104,7 +105,7 @@ class ContourPlot(OpVertexAttr):
         zi = np.clip(zi, vmin, vmax)
 
         ctr = ax.contourf(xi, yi, zi, levels,
-                          cmap=cmap,
+                          cmap=cmap, alpha=alpha,
                           vmax=vmax, vmin=vmin)
         if cbar:
             #plt.colorbar(mappable=ctr)
