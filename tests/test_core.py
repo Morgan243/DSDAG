@@ -206,7 +206,7 @@ class TestDSDAGBuild(unittest.TestCase):
                 Canary.canary +=1
                 return x*5
 
-        opA = CacheTestOpB()(5)
+        opA = CacheTestOpA()(5)
         opA = CacheTestOpB()(opA)
         opA = CacheTestOpB()(opA)
         A_part_dag = opA.build(write_to_cache=True)
