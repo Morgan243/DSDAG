@@ -980,5 +980,6 @@ class DAG2(DAG):
                     raise ValueError(msg)
 
         import dsdag
-        input_op_map = {k: o for k, o in all_ops.items() if isinstance(o, dsdag.ext.misc.InputOp)}
+        input_op_map = {k: o for k, o in all_ops.items()
+                        if isinstance(o, dsdag.ext.misc.InputOp)}
         return all_ops, dep_map, input_op_map

@@ -502,19 +502,18 @@ class OpK(object):
         return self
 
     def apply(opk, *args, **kwargs):
+        from dsdag.ext.misc import VarOp2 as VarOp
         if len(kwargs) == 0 and len(args) == 0:
             return opk
         elif len(kwargs) != 0:
-            from dsdag.ext.misc import VarOp, InputOp
             # var and input are basically the same?
-            auto_op = lambda _obj: VarOp(obj=_obj) if not isinstance(_obj, collections.Hashable) else InputOp(obj=_obj)
+            auto_op = lambda _obj: VarOp(obj=_obj) #if not isinstance(_obj, collections.Hashable) else InputOp(obj=_obj)
             req_ret = kwargs
             req_hash = hash(tuple((k, OpK.get_maybe_op_opk(v) if OpK.is_op(v) or isinstance(v, OpK) else auto_op(v))
                         for k, v in kwargs.items()))
         elif len(args) != 0:
-            from dsdag.ext.misc import VarOp, InputOp
             # var and input are basically the same?
-            auto_op = lambda _obj: VarOp(obj=_obj) if not isinstance(_obj, collections.Hashable) else InputOp(obj=_obj)
+            auto_op = lambda _obj: VarOp(obj=_obj) #if not isinstance(_obj, collections.Hashable) else InputOp(obj=_obj)
             req_ret = list(args)
             req_ret = [OpK.get_maybe_op_opk(a) if OpK.is_op(a) or isinstance(a, OpK) else auto_op(a)
                        for a in req_ret]

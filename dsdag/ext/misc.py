@@ -1,7 +1,7 @@
 #from dsdag.core.op import OpVertex
 from dsdag.core.op import OpVertexAttr as OpVertex
 #from dsdag.core.parameter import BaseParameter, UnhashableParameter
-from dsdag.core.op import opattr, opvertex
+from dsdag.core.op import opattr, opvertex, opvertex2
 import dsdag
 
 
@@ -32,6 +32,22 @@ class VarOp(OpVertex):
     def run(self):
         return self.obj
 
+
+@opvertex2
+class VarOp2:
+    obj = opattr(help_msg="The object to wrap and return")
+
+    def _node_color(self):
+        return '#b70043'
+
+    def _node_shape(self):
+        return 'box'
+
+    def requires(self):
+        return dict()
+
+    def run(self):
+        return self.obj
 
 @opvertex
 class LambdaOp(OpVertex):
