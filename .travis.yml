@@ -1,0 +1,12 @@
+language: python
+python:
+  - "3.6"
+  - "3.7"
+install:
+  - python setup.py install
+  - pip install toposort imblearn sklearn pandas numpy
+  - pip install pydot graphviz dask matplotlib tqdm psutil
+  - pip install attrs ipywidgets
+script:
+  - nosetests --with-coverage --cover-package=dsdag
+after_success: coveralls
