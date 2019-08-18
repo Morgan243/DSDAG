@@ -3,7 +3,6 @@ from toposort import toposort
 import copy
 import uuid
 import types
-import interactive_data_tree as idt
 import time
 import logging
 import inspect
