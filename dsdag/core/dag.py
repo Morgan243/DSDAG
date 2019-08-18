@@ -983,3 +983,140 @@ class DAG2(DAG):
         input_op_map = {k: o for k, o in all_ops.items()
                         if isinstance(o, dsdag.ext.misc.InputOp)}
         return all_ops, dep_map, input_op_map
+
+
+    def run_dag(self, *args, **kwargs):
+        self.dag_start_time = time.time()
+        computed = list()
+
+        topology = self.find_min_topology()
+        run_reqs = [o for l in topology for o in l]
+
+        if self.pbar:
+            from tqdm.auto import tqdm
+            self.tqdm_bar = tqdm(total=len(run_reqs))
+
+        # For each ter
+        for i, ind_processes in enumerate(topology):
+            ind_processes = list(ind_processes)
+            # For each dependency in the iter
+            for j, process in enumerate(ind_processes):
+                if self.live_browse and len(self.outputs) > 0:
+                    self.browse()
+
+                process_name = self.get_dag_unique_op_name(process)
+
+                if self.pbar:
+                    self.tqdm_bar.set_description(process_name)
+                else:
+                    self.logger.info(process_name)
+
+                # May be a list of dependencies (*args) or a dict (**kwargs)
+                dependencies = self.dep_map.get(process, dict())
+                dep_values = dependencies.values() if isinstance(dependencies, dict) else dependencies
+
+                tpid = "[%d.%d]" % (i, j)
+                #process_in_cache = ((isinstance(self.cache, dict) and process in self.cache)
+                #                    or
+                #                    (isinstance(self.cache, idt.RepoTree)
+                #                     and process_name in self.cache
+                #                     and hash(process) == self.cache[process_name].md['op_hash']))
+                process_in_cache = self.dependencies_in_cache(process)
+                load_from_cache = (process not in self.required_outputs  # always run specified vertices
+                                   # Op is set to cacheable (default)
+                                   and getattr(process, '_cacheable', False)
+                                   # If None of an Ops depends has been (re)computed
+                                   # and we're not forcing all downstream to run
+                                   and (not any(p in computed for p in dep_values)
+                                        or not self.force_downstream_rerun)
+                                    # DAG is set to read from cache
+                                   and self.read_from_cache
+                                    # Proces is in the cache (check dict or IDT)
+                                   and process_in_cache
+                                   #and (process_name in self.cache or process in self.cache)
+                                   )
+                if process in self.input_op_map:
+                    pass
+
+                if load_from_cache:
+                    if not self.pbar:
+                        self.logger.info("%s Will use cached output of %s"
+                                         % (tpid, process_name))
+                    if isinstance(self.cache, idt.RepoTree):
+                        self.outputs[process] = self.cache[process_name]
+                    else:
+                        self.outputs[process] = self.cache[process]
+                else:
+                    proc_args, proc_kwargs = self.collect_op_inputs(process)
+
+                    self.exec_process(process=process,
+                                      proc_args=proc_args,
+                                      proc_exec_kwargs=proc_kwargs,
+                                      tpid=tpid)
+                    computed.append(process)
+
+                if self.pbar:
+                    self.tqdm_bar.update(1)
+
+                future_deps = list()
+                #####
+                # Go through future Ops to determine dependencies
+
+                # Go through remaining processes at this level
+                for p in ind_processes[j+1:]:
+                    deps = self.dep_map.get(p, dict())
+                    dep_iter = deps if isinstance(deps, list) else deps.values()
+                    future_deps += list(d for d in dep_iter)
+
+                # Go through future levels
+                ### Include this level - so really we are removing leftovers from the previous level
+                for topo in topology[i:]:
+                    for p in topo:
+                        deps = self.dep_map.get(p, dict())
+                        vals = deps.values() if isinstance(deps, dict) else deps
+                        future_deps += list(d for d in vals)
+                future_deps = set(future_deps)
+                self.logger.debug("%d Future deps" % len(future_deps))
+
+                 # No reason to save the cached output back
+                if self.write_to_cache and not load_from_cache and process._cacheable:
+                    if not self.pbar:
+                        self.logger.info("Persisting output of %s" % process_name)
+                    if isinstance(self.cache, idt.RepoTree):
+                        import hashlib
+                        m = hashlib.sha256()
+                        m.update(str(process).encode('utf-8'))
+                        #m.update(str(process._req_hashable))
+                        h = str(m.digest())
+                        self.cache.save(self.outputs[process],
+                                            name=process_name,
+                                            author='dag',
+                                        op_hash=h,
+                                            #param_names=list(proc_kwargs.keys()),
+                                        #op_params=process._param_hashable,
+                                        #op_class_src_hash=hash(inspect.getsource(process.__class__)),
+                                            auto_overwrite=True)
+                    elif isinstance(self.cache, dict):
+                        self.cache[process] = self.outputs[process]
+
+                for k in list(self.outputs.keys()):
+                    if k not in future_deps and k not in self.required_outputs:
+                        self.logger.debug("Deleting future dep %s" % k.__class__.__name__)
+                        del self.outputs[k]
+
+                        in_cache = (k.__class__.__name__ in self.cache or k in self.cache)
+                        if k.opk.cacheable and self.cache_eviction and in_cache:
+                            self.logger.debug("Removing unnecessary op from cache %s"
+                                              % k.__class__.__name__)
+                            if isinstance(self.cache, idt.RepoTree):
+                                self.cache[k.__class__.__name__].delete('dag')
+                            else:
+                                del self.cache[k]
+
+        if self.pbar:
+            self.tqdm_bar.close()
+
+        if self.live_browse and len(self.outputs) > 0:
+            self.browse()
+
+        return self.get_op_output(self.required_outputs)

@@ -451,6 +451,7 @@ class OpK(object):
 
     dag = attr.ib(None)
     never_cache = attr.ib(False)
+    cacheable = attr.ib(True)
     ops_to_upack = attr.ib(set())
     unpack_output = attr.ib(False)
     downstream = attr.ib(dict())
@@ -501,10 +502,10 @@ class OpK(object):
 
         return self
 
-    def apply(opk, *args, **kwargs):
+    def apply(self, *args, **kwargs):
         from dsdag.ext.misc import VarOp2 as VarOp
         if len(kwargs) == 0 and len(args) == 0:
-            return opk
+            return self
         elif len(kwargs) != 0:
             # var and input are basically the same?
             auto_op = lambda _obj: VarOp(obj=_obj) #if not isinstance(_obj, collections.Hashable) else InputOp(obj=_obj)
@@ -525,23 +526,25 @@ class OpK(object):
 
         for r in req_ret:
             if hasattr(r, 'downstream'):
-                opk.set_downstream(**r.downstream)
+                self.set_downstream(**r.downstream)
 
-        if req_hash not in opk.__class__.closure_map:
-            def closure(self):
-                return req_ret
-            opk.__class__.closure_map[req_hash] = closure
+        if req_hash not in self.__class__.closure_map:
+            #def closure(*args, **kwargs):
+            #    return req_ret
+            #opk.__class__.closure_map[req_hash] = closure
+            self.__class__.closure_map[req_hash] = lambda *args, **kwargs: req_ret
 
         # Use descriptor protocol: https://docs.python.org/2/howto/descriptor.html
         #self.requires = closure.__get__(self)
         #self.req_hash = req_hash
         #opk._req_hashable = req_hash
         #opk.requires = opk.__class__.closure_map[opk._req_hashable].__get__(opk)
-        opk.set_requires(opk.__class__.closure_map[req_hash].__get__(opk),
+        self.set_requires(self.__class__.closure_map[req_hash],
+        #opk.__class__.closure_map[req_hash].__get__(opk),
                          hash_of_requires=req_hash,
                          name_of_method='_auto_requires')
 
-        return opk
+        return self
 
     def set_requires(self, requires_callable, hash_of_requires=None,
                      name_of_method='requires'):
@@ -558,6 +561,8 @@ class OpK(object):
                 except:
                     print("Cannot get source of requires: %s" % str(self.requires_callable))
                     self.req_hashable = uuid4()
+            else:
+                self.req_hashable = hash_of_requires
         elif hash_of_requires is None:
             self.req_hashable = ('requires_nothing',)
         elif hash_of_requires is not None:
@@ -672,6 +677,27 @@ class OpParent(object):
     def requires(self):
         return dict()
 
+    def build(self,
+              read_from_cache=False,
+              write_to_cache=False,
+              cache=None,
+              cache_eviction=False,
+              force_downstream_rerun=True,
+              pbar=True,
+              live_browse=False,
+              logger=None):
+
+        from dsdag.core.dag import DAG2
+        return DAG2(required_outputs=self,
+                   read_from_cache=read_from_cache,
+                   write_to_cache=write_to_cache,
+                   cache=cache,
+                   cache_eviction=cache_eviction,
+                   force_downstream_rerun=force_downstream_rerun,
+                   pbar=pbar,
+                   live_browse=live_browse,
+                   logger=logger)
+
 
 def opvertex2(cls, run_method='run', requires_method='requires',
               unpack_run_return=False, ops_to_unpack=tuple(),
@@ -679,6 +705,12 @@ def opvertex2(cls, run_method='run', requires_method='requires',
     if isinstance(name, bool) and name:
         cls._name = opattr(cls.__name__, init=True, kw_only=True)
 
+    opk_f = lambda : OpK(getattr(cls, run_method),
+                          getattr(cls, requires_method, None),
+                          unpack_output=unpack_run_return,
+                          ops_to_upack=ops_to_unpack)
+
+    cls.opk = opattr(init=True, kw_only=True, factory=opk_f)
     attr_cls = attr.s(cls, cmp=False, these=None)
 
     if not issubclass(cls, OpParent):
@@ -689,10 +721,6 @@ def opvertex2(cls, run_method='run', requires_method='requires',
                                    cmp=False,
                                    )
 
-    attr_cls.opk = OpK(getattr(attr_cls, run_method),
-                       getattr(attr_cls, requires_method, None),
-                       unpack_output=unpack_run_return,
-                       ops_to_upack=ops_to_unpack)
 
     return attr_cls
 

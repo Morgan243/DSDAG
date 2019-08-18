@@ -96,8 +96,11 @@ class TestAttrsDAG(unittest.TestCase):
         collect = OpK.from_callable(lambda *args, **kwargs: list(args),
                                          callable_name='collect',
                                          input_arguments=[])
-        c_0 = collect()(1, 2, 3)
-        c_1 = collect()(2, 3, 4)
+        c_0 = collect()
+        c_0 = c_0(1, 2, 3)
+
+        c_1 = collect()
+        c_1 = c_1(2, 3, 4)
 
         self.assertTrue(c_0 != c_1)
 

@@ -37,6 +37,10 @@ class VarOp(OpVertex):
 class VarOp2:
     obj = opattr(help_msg="The object to wrap and return")
 
+    def __hash__(self):
+        h = hash(self.obj)
+        return h
+
     def _node_color(self):
         return '#b70043'
 

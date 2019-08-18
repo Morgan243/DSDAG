@@ -268,8 +268,8 @@ class TestAttrsDAG(unittest.TestCase):
         self.assertEqual(Canary.canary, 0)
 
         dag.clear_cache()
-        # IDT will have a INDEX and LOG in them by default (for now)
-        self.assertEqual(len(dag.cache), 2)
+        # IDT will have a INDEX or LOG? in them by default (for now)
+        self.assertEqual(len(dag.cache), 1)
 
         ## Cache eviction
         dag = LambdaOp(f=sum)(op_b).build(write_to_cache=True, read_from_cache=True,
