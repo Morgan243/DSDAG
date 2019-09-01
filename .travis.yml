@@ -2,6 +2,13 @@ language: python
 python:
   - "3.6"
   - "3.7"
+
+
+addons:
+  apt:
+    packages:
+      - graphviz
+
 install:
   - python setup.py install
   - pip install pytest
