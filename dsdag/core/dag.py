@@ -876,7 +876,7 @@ class DAG2(DAG):
                     msg += "\n" + str(self.get_dag_unique_op_name(v))
                     msg += "\n" + str(hash(v))
                     self.logger.error(msg=msg)
-                    return -1
+                    raise ValueError(msg)
                 if isinstance(self.outputs[v], idt.RepoLeaf):
                     self.outputs[v] = self.outputs[v].load()
 
@@ -940,8 +940,8 @@ class DAG2(DAG):
             elif isinstance(dep_map[o], dict):
                 deps_to_resolve += list(dep_map[o].values())
             else:
-                from dsdag.core.op import OpVertexAttr
-                t = (OpVertex, OpVertexAttr)
+                from dsdag.core.op import OpParent
+                t = (OpParent)
                 if not isinstance(dep_map[o], t) and not issubclass(type(dep_map[o]), t):
 
                     msg = "%s requires returned %s - Op requires must return a list or dict of OpVertices or a single OpVertex"
@@ -1024,7 +1024,7 @@ class DAG2(DAG):
                 process_in_cache = self.dependencies_in_cache(process)
                 load_from_cache = (process not in self.required_outputs  # always run specified vertices
                                    # Op is set to cacheable (default)
-                                   and getattr(process, '_cacheable', False)
+                                   and getattr(process.opk, 'cacheable', False)
                                    # If None of an Ops depends has been (re)computed
                                    # and we're not forcing all downstream to run
                                    and (not any(p in computed for p in dep_values)
@@ -1079,7 +1079,7 @@ class DAG2(DAG):
                 self.logger.debug("%d Future deps" % len(future_deps))
 
                  # No reason to save the cached output back
-                if self.write_to_cache and not load_from_cache and process._cacheable:
+                if self.write_to_cache and not load_from_cache and process.opk.cacheable:
                     if not self.pbar:
                         self.logger.info("Persisting output of %s" % process_name)
                     if isinstance(self.cache, idt.RepoTree):

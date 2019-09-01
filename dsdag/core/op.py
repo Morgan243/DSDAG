@@ -451,7 +451,7 @@ class OpK(object):
     dag = attr.ib(None)
     never_cache = attr.ib(False)
     cacheable = attr.ib(True)
-    ops_to_upack = attr.ib(set())
+    ops_to_unpack = attr.ib(attr.Factory(set))
     unpack_output = attr.ib(False)
     downstream = attr.ib(dict())
 
@@ -461,6 +461,9 @@ class OpK(object):
 
         fields = attr.fields(obj.__class__)
         obj.parameters_ = {f.name: getattr(obj, f.name) for f in fields}
+        # Filter out OpK
+        #obj.parameters_ = {k: o for k, o in obj.parameters_.items()
+        #                   if not isinstance(o, OpK) }
         obj.param_hashable = tuple([(k, v if isinstance(v, collections.Hashable) else str(uuid4()))
                                     for k, v in obj.parameters_.items()])
 
@@ -492,7 +495,7 @@ class OpK(object):
         return self.parameters_
 
     def is_unpack_required(self, op):
-        return op in self.ops_to_upack
+        return op in self.ops_to_unpack
 
     def set_downstream(self, **kwargs):
         for k, v in kwargs.items():
@@ -509,13 +512,13 @@ class OpK(object):
             # var and input are basically the same?
             auto_op = lambda _obj: VarOp(obj=_obj) #if not isinstance(_obj, collections.Hashable) else InputOp(obj=_obj)
             req_ret = kwargs
-            req_hash = hash(tuple((k, OpK.get_maybe_op_opk(v) if OpK.is_op(v) or isinstance(v, OpK) else auto_op(v))
+            req_hash = hash(tuple((k, v if OpK.is_op(v) else auto_op(v))
                         for k, v in kwargs.items()))
         elif len(args) != 0:
             # var and input are basically the same?
             auto_op = lambda _obj: VarOp(obj=_obj) #if not isinstance(_obj, collections.Hashable) else InputOp(obj=_obj)
             req_ret = list(args)
-            req_ret = [OpK.get_maybe_op_opk(a) if OpK.is_op(a) or isinstance(a, OpK) else auto_op(a)
+            req_ret = [a if OpK.is_op(a) else auto_op(a)
                        for a in req_ret]
             req_hash = hash(tuple(req_ret))
 
@@ -568,7 +571,9 @@ class OpK(object):
             self.req_hashable = hash_of_requires
 
     def __hash__(self):
-        self._op_hash = hash((type(self), self.param_hashable, self.req_hashable))
+        self._op_hash = hash((type(self),
+                              #self.param_hashable,
+                              self.req_hashable))
         return self._op_hash
 
     def _set_dag(self, dag):
@@ -620,7 +625,9 @@ class OpK(object):
                                 kw_only=p.kind == p.KEYWORD_ONLY)
                 _attrs[p_name] = _attr
 
-        _op = attr.make_class(callable_name, _attrs, bases=(OpParent,), cmp=False)
+        _op = attr.make_class(callable_name, _attrs,
+                              bases=(object,), #(OpParent,),
+                              cmp=False)
 
         if sig is not None:
             pos_inputs = [ia for ia in input_arguments if isinstance(ia, int)]
@@ -662,7 +669,15 @@ class OpParent(object):
         return self.__class__.__name__ + "(" + repr + ")"
 
     def __hash__(self):
-        return hash(self.opk)
+        fields = attr.fields(self.__class__)
+        parameters_ = {f.name: getattr(self, f.name) for f in fields}
+        # Filter out OpK
+        parameters_ = {k: o for k, o in parameters_.items()
+                           if not isinstance(o, OpK) }
+        param_hashable = tuple([(k, v if isinstance(v, collections.Hashable) else str(uuid4()))
+                                    for k, v in parameters_.items()])
+
+        return hash((self.opk, param_hashable))
 
     def __eq__(self, other):
         return hash(self) == hash(other)
@@ -672,6 +687,15 @@ class OpParent(object):
 
     def get_name(self):
         return getattr(self, '_name', 'NONAME')
+
+    def set_unpack_input(self, op):
+        self.opk.ops_to_unpack.add(op)
+        return op
+
+    def unset_unpack_input(self, op):
+        if op in self.opk.ops_to_unpack:
+            self.opk.ops_to_unpack.remove(op)
+        return op
 
     def requires(self):
         return dict()
@@ -699,17 +723,20 @@ class OpParent(object):
 
 
 def opvertex2(cls, run_method='run', requires_method='requires',
-              unpack_run_return=False, ops_to_unpack=tuple(),
+              unpack_run_return=False, ops_to_unpack=None,
               name=True):
+    ops_to_unpack = set() if ops_to_unpack is None else ops_to_unpack
+
     if isinstance(name, bool) and name:
         cls._name = opattr(cls.__name__, init=True, kw_only=True)
 
-    opk_f = lambda : OpK(getattr(cls, run_method),
-                          getattr(cls, requires_method, None),
+    opk_f = lambda self: OpK(getattr(self, run_method),
+                          getattr(self, requires_method, None),
                           unpack_output=unpack_run_return,
-                          ops_to_upack=ops_to_unpack)
+                          ops_to_unpack=ops_to_unpack)
 
-    cls.opk = opattr(init=True, kw_only=True, factory=opk_f)
+    cls.opk = opattr(default=attr.Factory(opk_f, takes_self=True),
+                     init=True, kw_only=True)
     attr_cls = attr.s(cls, cmp=False, these=None)
 
     if not issubclass(cls, OpParent):

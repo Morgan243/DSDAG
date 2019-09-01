@@ -1,7 +1,7 @@
 from .context import dsdag
 import unittest
 
-from dsdag.core.op import OpVertexAttr, opattr, opvertex
+#from dsdag.core.op import OpVertexAttr, opattr, opvertex
 OpK = dsdag.core.op.OpK
 OpVertex = dsdag.core.op.OpVertexAttr
 
@@ -132,3 +132,197 @@ class TestAttrsDAG(unittest.TestCase):
         # Should fail
         with self.assertRaises(KeyError):
             dag.get_dag_unique_op_name(add_op4)
+
+    def test_duplicate_operations(self):
+        @opvertex
+        class T1:
+            def requires(self):
+                return dict(x=ProvideInt(magic_num=5), y=ProvideInt(magic_num=5))
+
+            def run(self, x, y):
+                return x * y
+
+        @opvertex
+        class T2:
+            def requires(self):
+                return dict(a=ProvideInt(magic_num=6), b=ProvideInt(magic_num=5))
+
+            def run(self, a, b):
+                return a + b
+
+        t1 = T1()
+        t2 = T2()
+
+        d = DAG([t1, t2])
+        # Only need 4 ops: T1, T2, int 5, int 6
+        self.assertEqual(len(d.all_ops), 4)
+        r = d()
+        self.assertFalse(t1 == t2)
+        self.assertEqual(r, [25, 11])
+
+        print(r)
+
+
+        var = VarOp(obj=5, name='int_5')
+        f = lambda x: x + 1
+        o1 = LambdaOp(f=f, name='main_lambda')(var)
+        o2 = LambdaOp(f=f, name='main_lambda')(var)
+        o3 = LambdaOp(f=f, name='main_lambda')(var)
+
+        o4 = LambdaOp(f=sum)(o1, o2, o3)
+        dag = o4.build()
+        self.assertEqual(o1, o2, msg='Identical lambda ops not considered the same!')
+        self.assertEqual(o2, o3, msg='Identical lambda ops not considered the same!')
+
+        #key_names = [o.unique_cls_name for o in dag.dep_map.keys()]
+        key_names = [o.get_name() for o in dag.dep_map.keys()]
+
+        #detail_dep_is_in_map = {o.unique_cls_name: {d.unique_cls_name:d.unique_cls_name in key_names for d in deps}
+        #                 for o, deps in dag.dep_map.items()}
+        detail_dep_is_in_map = {o.get_name(): {d.get_name():d.get_name() in key_names for d in deps}
+                                for o, deps in dag.dep_map.items()}
+
+        dep_is_in_map = {_name: all(dep_dict.values())
+                    for _name, dep_dict in detail_dep_is_in_map.items()}
+
+        self.assertTrue(all(dep_is_in_map.values()))
+
+    def test_dag_op_getter(self):
+        op = AddOp(magic_num=11, name='important_op')
+        dag = op.build()
+
+        self.assertEqual(op, dag['important_op'])
+
+    def test_caching(self):
+        @opvertex
+        class Canary:
+            canary = 0
+
+        @opvertex
+        class CacheTestOpA:
+            def run(self, x):
+                Canary.canary +=1
+                return [x*.5]
+
+        @opvertex
+        class CacheTestOpB:
+            def run(self, x):
+                Canary.canary +=1
+                return x*5
+
+        op_a = CacheTestOpA()(10)
+        op_b = CacheTestOpB()(op_a)
+        #lambda_op = LambdaOp(f=lambda a, b: a+b)(op_b, op_b)
+        LambdaAdd = OpK.from_callable(lambda a, b: a + b,
+                                      input_arguments=[0, 1],
+                                      callable_name='lambda_add')
+        lambda_op = LambdaAdd()
+        lambda_op = lambda_op(op_b, op_a)
+
+        dag = lambda_op.build(write_to_cache=True,
+                             read_from_cache=True,
+                             logger='DEBUG')
+        # First run
+        res = dag()
+        self.assertEqual(Canary.canary, 2)
+        Canary.canary = 0
+
+        res = dag()
+        self.assertEqual(Canary.canary, 0)
+
+        dag.clear_cache()
+        self.assertEqual(len(dag.cache), 0)
+
+        ## Cache eviction
+        LambdaSum = OpK.from_callable(lambda s: sum(s, 0),
+                                      input_arguments=[0],
+                                      callable_name='lambda_sum')
+        lambda_sum = LambdaSum()(op_b)
+        dag = lambda_sum.build(write_to_cache=True, read_from_cache=True,
+                                          cache_eviction=True, logger='DEBUG')
+        # First run
+        res = dag()
+        self.assertEqual(Canary.canary, 2)
+        Canary.canary = 0
+
+        res = dag()
+        self.assertEqual(Canary.canary, 0)
+
+    def test_single_op_requires(self):
+        @opvertex
+        class SingleRequires:
+            def requires(self):
+                return ProvideInt(magic_num=10)
+
+            def run(self, i):
+                return i*10
+
+        dag = SingleRequires().build()
+        res = dag()
+
+        self.assertEqual(res, 100)
+
+
+    def test_op_parameter_ordering(self):
+        @opvertex
+        class OpOrderTest(OpVertex):
+            first = opattr(1)
+            second = opattr(2)
+            third = opattr(3)
+
+            def run(self):
+                return self.first*1 + self.second/2 + self.third/3
+
+        dag = OpOrderTest(1, 2, 3).build()
+        res = dag()
+
+        self.assertEqual(res, 3)
+
+    def test_arg_unpacking(self):
+        @opvertex
+        class ListReturner:
+            def run(self):
+                return list(range(5))
+
+        @opvertex
+        class NeedsArgs:
+            def requires(self):
+                op = ListReturner()
+                self.set_unpack_input(op)
+                return op
+
+            def run(self, a1, a2, a3, a4, a5):
+                return a1 + a2 + a3 + a4 + a5
+
+        dag = DAG(NeedsArgs())
+        res = dag()
+        self.assertEqual(res, 10)
+
+
+    def test_kwarg_unpacking(self):
+        @opvertex
+        class DictReturner:
+            def run(self):
+                return {k:v for k, v in zip('abc', [1, 2, 3])}
+
+        @opvertex
+        class NeedsKwargs:
+            def requires(self):
+                op = DictReturner()
+                self.set_unpack_input(op)
+                return op
+
+            def run(self, a, b, c):
+                return a + b + c
+
+        dag = DAG(NeedsKwargs())
+        res = dag()
+        self.assertEqual(res, 6)
+
+    def test_lazy_op(self):
+        # Foo Bar may have been used before, so give custom name to id
+        op = Foo()(Bar(name='bar_test'))
+        dag = DAG(['bar_test', op])
+        bar, foo = dag()
+        self.assertEqual(bar, "Bar")
+        self.assertEqual(foo, "FooBar")
