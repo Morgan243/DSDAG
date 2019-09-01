@@ -74,15 +74,6 @@ class OpK(object):
         return hasattr(obj, 'opk') and isinstance(obj.opk, OpK)
 
     @staticmethod
-    def get_maybe_op_opk(obj):
-        if isinstance(obj, OpK):
-            return obj
-        elif OpK.is_op(obj):
-            return obj.opk
-        else:
-            return None
-
-    @staticmethod
     def op_nb_viz(op_out, viz_out=None):
         import ipywidgets as widgets
         if viz_out is None:

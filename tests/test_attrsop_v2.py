@@ -344,6 +344,8 @@ class TestAttrsDAG(unittest.TestCase):
             def requires(self):
                 op = ListReturner()
                 self.set_unpack_input(op)
+                self.unset_unpack_input(op)
+                self.set_unpack_input(op)
                 return op
 
             def run(self, a1, a2, a3, a4, a5):
@@ -415,3 +417,12 @@ class TestAttrsDAG(unittest.TestCase):
         res = dag()
 
         dag.browse()
+
+    def test_op_repr(self):
+        op_a = AddOp()
+        print(repr(op_a))
+
+    def test_no_dag_logger(self):
+
+        op_a = AddOp()
+        logger = op_a.get_logger()
