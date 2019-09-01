@@ -12,6 +12,11 @@ install:
   - pip install attrs ipywidgets
   - pip install git+https://github.com/Morgan243/InteractiveDataTree.git
   - pip install git+https://github.com/Morgan243/DSDAG.git
+before_script: # configure a headless display to test plot generation
+  - "export DISPLAY=:99.0"
+  - "sh -e /etc/init.d/xvfb start"
+  - sleep 3 # give xvfb some time to start
 script:
   - nosetests --with-coverage --cover-package=dsdag
 after_success: coveralls
+
