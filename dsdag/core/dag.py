@@ -566,19 +566,32 @@ class DAG(object):
                              % str(on_missing))
         return n
 
-    def clear_cache(self):
+    def clear_cache(self, only_ops_in_dag=False):
         self.logger.info("clearing cache")
-        if isinstance(self.cache, idt.RepoTree):
-            for k in self.name_to_op_map.keys():
-                if k in self.cache:
-                    self.logger.info("Removing %s from repo cache" % k)
+        if only_ops_in_dag:
+            self.logger.info("Only clearing ops present in this DAG's cache")
+            if isinstance(self.cache, idt.RepoTree):
+                for k in self.name_to_op_map.keys():
+                    if k in self.cache:
+                        self.logger.info("Removing %s from repo cache" % k)
+                        self.cache[k].delete('dag')
+            elif self.cache is not None:
+                for k in self.all_ops:
+                    if k in self.cache:
+                        self.logger.info("Removing %s from cache" % k)
+                        del self.cache[k]
+        else:
+            if isinstance(self.cache, idt.RepoTree):
+                keys = list(self.cache.list_leaves())
+                for k in keys:
                     self.cache[k].delete('dag')
-        elif self.cache is not None:
-            for k in self.all_ops:
-                if k in self.cache:
-                    self.logger.info("Removing %s from cache" % k)
+            elif self.cache is not None:
+                keys = list(self.cache.keys())
+                for k in keys:
                     del self.cache[k]
+
         return self
+
 
     def viz(self, fontsize='10',
             color_mapping=None,
