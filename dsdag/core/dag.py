@@ -397,7 +397,11 @@ class DAG(object):
             # reqs can be kwargs or args (list)
             _iter_reqs = reqs.values() if isinstance(reqs, dict) else reqs
             # But only need to resolve those that are not satisfied already
-            deps_to_resolve += [r for r in _iter_reqs if not self.dependencies_in_cache(r)]
+            if self.read_from_cache:
+                deps_to_resolve += [r for r in _iter_reqs
+                                    if not self.dependencies_in_cache(r)]
+            else:
+                deps_to_resolve += list(_iter_reqs)
 
 
         dep_sets = {p: set(d.values()) if isinstance(d, dict) else set(d)
