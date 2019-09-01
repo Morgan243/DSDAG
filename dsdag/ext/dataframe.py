@@ -1,16 +1,18 @@
-from dsdag.core.parameter import BaseParameter
-from dsdag.core.op import OpVertex
 import pandas as pd
+from dsdag.core.op import opvertex2 as opvertex
+from dsdag.core.op import parameter as parameter
 
-class DFOp(OpVertex):
+@opvertex
+class DFOp:
     def _node_color(self):
         return '#615eff'
 
-class Read_CSV(OpVertex):
-    filepath_or_buffer = BaseParameter()
-    sep = BaseParameter(',')
-    delimiter = BaseParameter(None)
-    header = BaseParameter('infer')
+@opvertex
+class Read_CSV:
+    filepath_or_buffer = parameter()
+    sep = parameter(',')
+    delimiter = parameter(None)
+    header = parameter('infer')
     def run(self, path=None):
         if path is None:
             path = self.filepath_or_buffer
@@ -18,20 +20,21 @@ class Read_CSV(OpVertex):
                            sep=self.sep, delimiter=self.delimiter,
                            header=self.header)
 
-class Merge(DFOp):
-    #key = BaseParameter()
-    how = BaseParameter('inner')
+@opvertex
+class Merge:
+    #key = parameter()
+    how = parameter('inner')
 
-    on = BaseParameter(None)
-    left_on = BaseParameter(None)
-    right_on = BaseParameter(None)
-    left_index = BaseParameter(False)
-    right_index = BaseParameter(False)
-    sort = BaseParameter(False)
-    suffixes = BaseParameter(('_x', '_y'))
-    copy = BaseParameter(True)
-    indicator = BaseParameter(False)
-    validate = BaseParameter(None)
+    on = parameter(None)
+    left_on = parameter(None)
+    right_on = parameter(None)
+    left_index = parameter(False)
+    right_index = parameter(False)
+    sort = parameter(False)
+    suffixes = parameter(('_x', '_y'))
+    copy = parameter(True)
+    indicator = parameter(False)
+    validate = parameter(None)
 
     def requires(self):
         raise NotImplementedError()
@@ -49,15 +52,16 @@ class Merge(DFOp):
 
         return merged
 
-class Concat(DFOp):
-    axis = BaseParameter(0)
-    join = BaseParameter('outer')
-    ignore_index = BaseParameter(False)
-    keys = BaseParameter(None)
-    levels = BaseParameter(None)
-    verify_integrity = BaseParameter(False)
-    sort = BaseParameter(None)
-    copy = BaseParameter(True)
+@opvertex
+class Concat:
+    axis = parameter(0)
+    join = parameter('outer')
+    ignore_index = parameter(False)
+    keys = parameter(None)
+    levels = parameter(None)
+    verify_integrity = parameter(False)
+    sort = parameter(None)
+    copy = parameter(True)
 
     def requires(self):
         raise NotImplementedError()
@@ -70,10 +74,10 @@ class Concat(DFOp):
                          sort=self.sort, copy=self.copy)
 
 class Join(DFOp):
-    how = BaseParameter('left')
-    lsuffix = BaseParameter('')
-    rsuffix = BaseParameter('')
-    sort = BaseParameter(False)
+    how = parameter('left')
+    lsuffix = parameter('')
+    rsuffix = parameter('')
+    sort = parameter(False)
 
     def requires(self):
         raise NotImplementedError()
@@ -87,21 +91,21 @@ class Join(DFOp):
         return ret
 
 class Drop(DFOp):
-    labels = BaseParameter()
-    axis = BaseParameter(0)
+    labels = parameter()
+    axis = parameter(0)
 
     def run(self, df):
         return df.drop(labels=self.labels, axis=self.axis)
 
 class Query(DFOp):
-    q = BaseParameter()
+    q = parameter()
     def run(self, df):
         return df.query(self.q)
 
 class AssignColumn(DFOp):
-    column = BaseParameter(None)
-    value = BaseParameter(None)
-    assignments = BaseParameter(None)
+    column = parameter(None)
+    value = parameter(None)
+    assignments = parameter(None)
     def run(self, df):
         if self.assignments is not None:
             for col, val in self.assignments.items():
@@ -111,40 +115,40 @@ class AssignColumn(DFOp):
         return df
 
 class RenameColumns(DFOp):
-    columns = BaseParameter(None)
-    copy = BaseParameter(True)
-    inplace = BaseParameter(False)
-    level = BaseParameter(None)
+    columns = parameter(None)
+    copy = parameter(True)
+    inplace = parameter(False)
+    level = parameter(None)
 
     def run(self, df):
         return  df.rename(columns=self.columns, copy=self.copy,
                           inplace=self.inplace, level=self.level)
 
 class ApplyMap(DFOp):
-    func = BaseParameter()
+    func = parameter()
 
     def run(self, df):
         return df.applymap(func=self.func)
 
 class DropDuplicates(DFOp):
-    subset = BaseParameter(None)
-    keep = BaseParameter('first')
-    inplace = BaseParameter(False)
+    subset = parameter(None)
+    keep = parameter('first')
+    inplace = parameter(False)
 
     def run(self, df):
         return df.drop_duplicates(subset=self.subset, keep=self.keep,
                                   inplace=self.inplace)
 
 class SelectColumns(DFOp):
-    columns = BaseParameter(None)
+    columns = parameter(None)
     def run(self, df):
         return df[self.columns]
 
 class DropNa(DFOp):
-    axis=BaseParameter(0)
-    how=BaseParameter('any')
-    thresh=BaseParameter(None)
-    subset=BaseParameter(None)
+    axis=parameter(0)
+    how=parameter('any')
+    thresh=parameter(None)
+    subset=parameter(None)
 
     def run(self, df):
         return df.dropna(axis=self.axis, how=self.how, thresh=self.thresh,
@@ -160,7 +164,7 @@ from ipywidgets import interact, interactive, fixed, interact_manual
 import ipywidgets as widgets
 
 
-class FrameBrowseMaixin():
+class FrameBrowseMixin():
 
     @staticmethod
     def build_df_browse_widget(df, orientation='horizontal'):
@@ -182,9 +186,8 @@ class FrameBrowseMaixin():
         out = widgets.Output()
 
         def btn_click(b):
-            import gnwdata as gd
             out.clear_output()
-            desc = gd.analysis.rdt(df).T
+            desc = df.describe().T
             out.append_display_data(desc)
 
         btn = widgets.Button(description="Compute RDT")
@@ -251,10 +254,9 @@ class FrameBrowseMaixin():
                                     disabled=False)
 
         def btn_click(b):
-            import gnwdata as gd
             out.clear_output()
             s = df[dropdown.value]
-            entropy = gd.analysis.entropy(s)
+            entropy = 0
             out.append_display_data(entropy)
 
             matplotlib.pyplot.ioff()
@@ -282,23 +284,23 @@ class FrameBrowseMaixin():
         tab_titles = list()
 
         # DF Browse
-        tab_child_widgets.append(FrameBrowseMaixin.build_df_browse_widget(df))
+        tab_child_widgets.append(FrameBrowseMixin.build_df_browse_widget(df))
         tab_titles.append('Browse')
 
         # RDT
-        tab_child_widgets.append(FrameBrowseMaixin.build_df_rdt_widget(df))
+        tab_child_widgets.append(FrameBrowseMixin.build_df_rdt_widget(df))
         tab_titles.append('RDT')
 
         # Sample
-        tab_child_widgets.append(FrameBrowseMaixin.build_df_sample_widget(df))
+        tab_child_widgets.append(FrameBrowseMixin.build_df_sample_widget(df))
         tab_titles.append('Sample')
 
         # Query
-        tab_child_widgets.append(FrameBrowseMaixin.build_df_query_widget(df))
+        tab_child_widgets.append(FrameBrowseMixin.build_df_query_widget(df))
         tab_titles.append('Query')
 
         # Univariate Analysis
-        tab_child_widgets.append(FrameBrowseMaixin.build_df_univariate_widget(df))
+        tab_child_widgets.append(FrameBrowseMixin.build_df_univariate_widget(df))
         tab_titles.append('Univariate')
 
         tab = widgets.Tab()
@@ -316,11 +318,11 @@ class FrameBrowseMaixin():
          #   return df
 
 
-class FrameBrowse(DFOp, FrameBrowseMaixin):
-    passthrough = BaseParameter(True)
+class FrameBrowse(DFOp, FrameBrowseMixin):
+    passthrough = parameter(True)
 
     def op_nb_viz(self, op_out, viz_out=None):
-        return FrameBrowseMaixin.op_nb_viz(op_out, viz_out)
+        return FrameBrowseMixin.op_nb_viz(op_out, viz_out)
 
     def run(self, df):
         output = self.op_nb_viz(df)

@@ -1,18 +1,18 @@
 from .context import dsdag
 import unittest
 
-#from dsdag.core.op import OpVertexAttr, opattr, opvertex
+#from dsdag.core.op import OpVertexAttr, parameter, opvertex
 OpK = dsdag.core.op.OpK
-OpVertex = dsdag.core.op.OpVertexAttr
+#OpVertex = dsdag.core.op.OpVertexAttr
 
 #OpVertex = dsdag.core.op.OpVertexAttr
 opvertex = dsdag.core.op.opvertex2
-opattr = dsdag.core.op.opattr
+opattr = dsdag.core.op.parameter
 
 #BaseParameter = dsdag.core.parameter.BaseParameter
 #UnhashableParameter = dsdag.core.parameter.UnhashableParameter
 df_templates = dsdag.ext.dataframe
-DAG = dsdag.core.dag.DAG2
+DAG = dsdag.core.dag.DAG
 LambdaOp = dsdag.ext.misc.LambdaOp
 VarOp = dsdag.ext.misc.VarOp
 
@@ -319,7 +319,7 @@ class TestAttrsDAG(unittest.TestCase):
 
     def test_op_parameter_ordering(self):
         @opvertex
-        class OpOrderTest(OpVertex):
+        class OpOrderTest:
             first = opattr(1)
             second = opattr(2)
             third = opattr(3)

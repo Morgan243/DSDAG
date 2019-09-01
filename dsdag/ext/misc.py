@@ -1,24 +1,25 @@
 #from dsdag.core.op import OpVertex
-from dsdag.core.op import OpVertexAttr as OpVertex
+#from dsdag.core.op import OpVertexAttr as OpVertex
 #from dsdag.core.parameter import BaseParameter, UnhashableParameter
-from dsdag.core.op import opattr, opvertex, opvertex2
+from dsdag.core.op import parameter, OpK
+from dsdag.core.op import opvertex2 as opvertex
 import dsdag
 
 
-Collect = OpVertex.from_callable(lambda *args, **kwargs: list(args),
+Collect = OpK.from_callable(lambda *args, **kwargs: list(args),
                                  callable_name='collect',
                                  input_arguments=[])
 
 @opvertex
-class InputOp(OpVertex):
-    obj = opattr(help_msg="The object to wrap and return")
+class InputOp:
+    obj = parameter(help_msg="The object to wrap and return")
 
     def run(self):
         return self.obj
 
 @opvertex
-class VarOp(OpVertex):
-    obj = opattr(help_msg="The object to wrap and return")
+class VarOp:
+    obj = parameter(help_msg="The object to wrap and return")
 
     def _node_color(self):
         return '#b70043'
@@ -33,9 +34,9 @@ class VarOp(OpVertex):
         return self.obj
 
 
-@opvertex2
+@opvertex
 class VarOp2:
-    obj = opattr(help_msg="The object to wrap and return")
+    obj = parameter(help_msg="The object to wrap and return")
 
     def __hash__(self):
         h = hash(self.obj)
@@ -54,8 +55,8 @@ class VarOp2:
         return self.obj
 
 @opvertex
-class LambdaOp(OpVertex):
-    f = opattr(help_msg="Function that is applied to the input")
+class LambdaOp:
+    f = parameter(help_msg="Function that is applied to the input")
 
     def _node_color(self):
         return '#d65768'
@@ -67,8 +68,8 @@ class LambdaOp(OpVertex):
         return self.f(*args, **kwargs)
 
 @opvertex
-class Select(OpVertex):
-    i = opattr(0)
+class Select:
+    i = parameter(0)
     _never_cache = True
     def run(self, l):
         return l[self.i]

@@ -1,8 +1,8 @@
 import string
 from string import Formatter
-from dsdag.core.op import OpVertex, OpMeta
-
-from dsdag.core.parameter import BaseParameter, UnhashableParameter
+#from dsdag.core.op import OpVertex, OpMeta
+from dsdag.core.op import opvertex2 as opvertex
+from dsdag.core.op import parameter, OpParent
 
 def highlight_sql(q):
     from pygments import highlight
@@ -19,7 +19,8 @@ def highlight_sql(q):
     html = style_html + pygment_html
     return html
 
-class SQL(OpVertex):
+@opvertex
+class SQL:
     """
     Provides a 'q' parameter and a highlighted representation for notebook views.
 
@@ -28,8 +29,8 @@ class SQL(OpVertex):
     a sub query. Regardless, the resulting query string is returned at runtime.
 
     """
-    q = BaseParameter(default="""select * from something limit 100""")
-    wrap_as = BaseParameter(None, help_msg="Wrap the sql query in () as ")
+    q = parameter(default="""select * from something limit 100""")
+    wrap_as = parameter(None, help_msg="Wrap the sql query in () as ")
 
     def run(self, **kwargs):
         self.run_kwargs = kwargs
@@ -89,12 +90,12 @@ class SQL(OpVertex):
         viz_out.append_display_data(HTML(html))
         return viz_out
 
-
-class SQL_WrapAs(OpVertex):
+@opvertex
+class SQL_WrapAs:
     """
     Wraps a query string as a sub-query
     """
-    alias = BaseParameter(None, help_msg="Wrap the sql query in () as <alias>")
+    alias = parameter(None, help_msg="Wrap the sql query in () as <alias>")
 
     def run(self, q):
         return "(%s) AS %s" % (q, self.alias)
@@ -112,41 +113,41 @@ class SQL_WrapAs(OpVertex):
     def _node_color(self):
         return '#59ba5e'
 
-class SQL_ParamMixin():
-    __metaclass__ = OpMeta
+@opvertex
+class SQL_ParamMixin:
     """
     Contains many baseline parameters useful for query Ops, including clauses, key_map, and join_keys.
 
     Other than parameters, this Op provides a helper method to collect all parameters into a dictionary,
     useful when all parameters need to be passed to a required SQL param Op from a non-SQL param op.
     """
-    key_map = BaseParameter(None,
+    key_map = parameter(None,
                             help_msg="Map select alias to select source (clnt_ref_id->'CL.clnt_ref_id/10')")
 
     ### CLAUSES
     # Raw SQL text to inserted into the query
-    select_clause = BaseParameter(None,
+    select_clause = parameter(None,
                                   help_msg="Select statement to include after SELECT, but before FROM ")
-    join_clause = BaseParameter(None,
+    join_clause = parameter(None,
                                 help_msg="Join statement to include after FROM but before WHERE")
-    where_clause = BaseParameter(None,
+    where_clause = parameter(None,
                                  help_msg="SQL filter to be appended to the WHERE clause")
-    groupby_clause = BaseParameter(None,
+    groupby_clause = parameter(None,
                                  help_msg="SQL filter to be appended to the WHERE clause")
     ###
 
-    join_ops = BaseParameter(None,
+    join_ops = parameter(None,
                              "Pass a SQL Op or mapping of SQL Ops to be joined. These will"
                              "specified as requirements by this OP and will be passed as named_joined_queries"
                              "at runtime.")
-    join_keys = BaseParameter(None)
+    join_keys = parameter(None)
     _join_template = """
     JOIN
         {sample_filter_query}
     ON
         {join_condition}
     """
-    extra_q_kwargs = BaseParameter(None, "Mapping of additional format parameters that need to "
+    extra_q_kwargs = parameter(None, "Mapping of additional format parameters that need to "
                                          "be specified in the query (e.g. snapshot date, code)")
 
     def make_sql_param_kwargs(self):
@@ -159,6 +160,7 @@ class SQL_ParamMixin():
                     join_ops=self.join_ops)
 
 
+@opvertex
 class SQL_Param(SQL, SQL_ParamMixin):
     # not valid by default - but gets the point across
     #q = BaseParameter(default="""select * {select_clause} from something limit
@@ -172,7 +174,7 @@ class SQL_Param(SQL, SQL_ParamMixin):
             if not all(isinstance(o, (SQL, SQL_WrapAs)) for o in self.join_ops.values()):
                 raise ValueError("All join ops must be SQL derived")
             return self.join_ops
-        elif issubclass(type(self.join_ops), (OpVertex, SQL)):
+        elif issubclass(type(self.join_ops), (OpParent, SQL)):
             # No name given, so just make one up ('param_subq')
             return dict(param_subq = self.join_ops)
         else:
@@ -278,10 +280,10 @@ class SQL_CountSamples(SQL):
 
 class SQL_RandomSample(SQL):
     q = """select * from ({subq}) as {alias} where random() < {rate} {where_addon}"""
-    alias = BaseParameter("sq", help_msg="Alias for sub query")
-    rate = BaseParameter(.1)
-    where_addon = BaseParameter(None)
-    limit = BaseParameter(None)
+    alias = parameter("sq", help_msg="Alias for sub query")
+    rate = parameter(.1)
+    where_addon = parameter(None)
+    limit = parameter(None)
 
     def run(self, subq):
 
@@ -298,9 +300,9 @@ class SQL_RandomSample(SQL):
 
 class SQL_WrapQuery(SQL):
     q = """select {select_clause} from ({subq}) as {subq_alias} {where_addon}"""
-    select_clause = BaseParameter('*', help_msg='Select string')
-    where_addon = BaseParameter(None, help_msg='Where clause (inlucde WHERE keyword)')
-    subq_alias = BaseParameter('sq', help_msg='What to name the sub query (as <name>)')
+    select_clause = parameter('*', help_msg='Select string')
+    where_addon = parameter(None, help_msg='Where clause (inlucde WHERE keyword)')
+    subq_alias = parameter('sq', help_msg='What to name the sub query (as <name>)')
 
     def run(self, subq):
         where_add = self.where_addon if self.where_addon is not None else ''
@@ -313,10 +315,10 @@ class SQL_WrapQuery(SQL):
 
 class SQL_SelectLiterals(SQL):
     q = """VALUES {value_tuples} as {subq_name} ({field_names})"""
-    value_tuples = BaseParameter(help_msg="List of tuples of values, each tuple should have the same size and a column types")
-    field_names = BaseParameter(help_msg="List of field names, should be same length as tuple in value_tuples parameter")
-    subq_name = BaseParameter('subq', help_msg="(Optional) Alias for the resulting table selection")
-    fields_to_quote = BaseParameter(None, help_msg="(Optional) Field names that are strings that should be quoted (e.g. plcy_nbr_id)")
+    value_tuples = parameter(help_msg="List of tuples of values, each tuple should have the same size and a column types")
+    field_names = parameter(help_msg="List of field names, should be same length as tuple in value_tuples parameter")
+    subq_name = parameter('subq', help_msg="(Optional) Alias for the resulting table selection")
+    fields_to_quote = parameter(None, help_msg="(Optional) Field names that are strings that should be quoted (e.g. plcy_nbr_id)")
 
     def run(self):
         fn_map = {i:fn for i, fn in enumerate(self.field_names)}
@@ -333,7 +335,7 @@ class SQL_SelectFromDataFrame(SQL):
     q = """(VALUES {value_tuples}) as {subq_name} ({field_names})"""
     #df = BaseParameter(help_msg="DataFrame to be selecte from - column names will be the field name")
     #df = UnhashableParameter(help_msg="DataFrame to be selecte from - column names will be the field name")
-    subq_name = BaseParameter(None, help_msg="(Optional) Alias for the resulting table selection")
+    subq_name = parameter(None, help_msg="(Optional) Alias for the resulting table selection")
 
     def run(self, *args, **kwargs):
         all_params = list(args) + list(kwargs.values())

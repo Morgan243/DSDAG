@@ -1,18 +1,18 @@
-from dsdag.core.parameter import BaseParameter
-from dsdag.core.op import OpVertex
+from dsdag.core.op import opvertex2 as opvertex
+from dsdag.core.op import parameter
 
 import dask
 from dask.diagnostics import ProgressBar
 import inspect
 
 
-
-class DaskParallel(OpVertex):
+@opvertex
+class DaskParallel:
     """
     Wraps an Op in a dask.delayed object
     """
-    parallel_op = BaseParameter()
-    op_kwargs = BaseParameter(dict())
+    parallel_op = parameter()
+    op_kwargs = parameter(dict())
 
     def _node_color(self):
         return '#2fbc2d'
@@ -37,14 +37,15 @@ class DaskParallel(OpVertex):
     def get_name(self):
         return self.parallel_op.get_name()
 
-class DaskCollect(OpVertex):
+@opvertex
+class DaskCollect:
     """
     Calls dask.compute on a collection of dask delayed objects
     """
-    dask_progress_bar = BaseParameter(True,
+    dask_progress_bar = parameter(True,
                                       "Include a diagnostic Progressbar from dask")
-    num_workers = BaseParameter(4, "Number of dask workers")
-    scheduler = BaseParameter('processes', "Dask scheduler option")
+    num_workers = parameter(4, "Number of dask workers")
+    scheduler = parameter('processes', "Dask scheduler option")
 
     def _node_color(self):
         return '#2fbc2d'

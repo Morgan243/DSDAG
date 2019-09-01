@@ -1,18 +1,21 @@
 import matplotlib
 from matplotlib import pyplot as plt
-from dsdag.core.parameter import BaseParameter
-from dsdag.core.op import OpVertex
+#from dsdag.core.parameter import BaseParameter
+#from dsdag.core.op import OpVertex
+from dsdag.core.op import opvertex2 as opvertex
+from dsdag.core.op import parameter as parameter
 import numpy as np
 
-class Subplots(OpVertex):
-    nrows=BaseParameter(1)
-    ncols=BaseParameter(1)
-    sharex=BaseParameter(False)
-    sharey=BaseParameter(False)
-    #squeeze=BaseParameter(True)
-    subplot_kw=BaseParameter(None)
-    gridspec_kw=BaseParameter(None)
-    figsize=BaseParameter((12, 6))
+@opvertex
+class Subplots:
+    nrows=parameter(1)
+    ncols=parameter(1)
+    sharex=parameter(False)
+    sharey=parameter(False)
+    #squeeze=parameter(True)
+    subplot_kw=parameter(None)
+    gridspec_kw=parameter(None)
+    figsize=parameter((12, 6))
     _never_cache = True
     #fig_kw = dsdag.core.parameter.BaseParameter(dict())
     def run(self):
@@ -26,14 +29,15 @@ class Subplots(OpVertex):
         self.axs = [self.axs[r][c] for r in range(self.nrows) for c in range(self.ncols)]
         return self.axs
 
-class HistMulti(OpVertex):
-    title = BaseParameter('')
-    figsize = BaseParameter((8, 5))
-    xlabel = BaseParameter('x')
-    ylabel = BaseParameter('y')
-    logx = BaseParameter(False)
-    logy = BaseParameter(False)
-    passthrough = BaseParameter(False, "If False, returns axis of plot rather ")
+@opvertex
+class HistMulti:
+    title = parameter('')
+    figsize = parameter((8, 5))
+    xlabel = parameter('x')
+    ylabel = parameter('y')
+    logx = parameter(False)
+    logy = parameter(False)
+    passthrough = parameter(False, "If False, returns axis of plot rather ")
     # @staticmethod
     def hist_compare(self, **hist_data):
         fig, ax = plt.subplots(figsize=self.figsize)
@@ -59,11 +63,9 @@ class HistMulti(OpVertex):
         else:
             return ax
 
-from dsdag.core.op import OpVertexAttr, opvertex, opattr
-from dsdag.core.op import opattr as parameter
 
 @opvertex
-class ContourPlot(OpVertexAttr):
+class ContourPlot:
     sample_ixes = parameter(None)
     title = parameter('')
     bands = parameter(None)

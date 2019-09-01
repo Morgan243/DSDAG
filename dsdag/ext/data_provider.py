@@ -1,7 +1,9 @@
-from dsdag.core.op import OpVertex
+#from dsdag.core.op import OpVertex
 from dsdag.core.parameter import BaseParameter, RepoTreeParameter
+from dsdag.core.op import opvertex2 as opvertex
 
-class Passthrough(OpVertex):
+@opvertex
+class Passthrough:
     _never_cache = True
     def _node_color(self):
         return '#eded5c'
@@ -12,7 +14,8 @@ class Passthrough(OpVertex):
     def run(self, o):
         return o
 
-class DataTreeLoader(OpVertex):
+@opvertex
+class DataTreeLoader:
     rt_leaf = RepoTreeParameter()
     _never_cache = True
 

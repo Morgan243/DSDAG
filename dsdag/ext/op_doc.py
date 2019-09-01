@@ -1,9 +1,10 @@
-from dsdag.core.op import OpVertex
+#from dsdag.core.op import OpVertex
+from dsdag.core.op import OpParent
 from types import ModuleType
 import inspect
 
 def find_ops(_o, max_depth=3, depth=0,
-             types=(OpVertex),
+             types=(OpParent),
              filter_func=None,
              keys_as_string=False,
              module_white_list=None):
@@ -138,7 +139,7 @@ class auto_doc(object):
                         [postfix_html if postfix_html is not None else ''])
             return "\n".join(sub_docs)
 
-        elif isinstance(_o, OpVertex) or (inspect.isclass(_o) and issubclass(_o, OpVertex)):
+        elif isinstance(_o, OpParent) or (inspect.isclass(_o) and issubclass(_o, OpVertex)):
             doc = auto_doc.make_jinja_op_doc(_o, template=template)
             return doc
         else:

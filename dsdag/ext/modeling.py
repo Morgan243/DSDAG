@@ -1,6 +1,7 @@
 import uuid
-from dsdag.core.op import OpVertexAttr as OpVertex
-from dsdag.core.op import opvertex, opattr
+from dsdag.core.op import opvertex2 as opvertex
+from dsdag.core.op import parameter
+
 from dsdag.core.parameter import BaseParameter, DatetimeParameter, UnhashableParameter, RepoTreeParameter
 import pandas as pd
 import numpy as np
@@ -22,7 +23,8 @@ from multiprocessing import Pool
 
 from tqdm import tqdm
 
-class BaseWrangler(OpVertex):
+@opvertex
+class BaseWrangler:
     def requires(self):
         return dict()
 
@@ -293,16 +295,16 @@ class DT_Explain():
 
 @opvertex
 class BoostedBinaryClassifier(BaseWrangler):
-    model_class = opattr(DecisionTreeClassifier)
-    model_param_grid = opattr(None)
+    model_class = parameter(DecisionTreeClassifier)
+    model_param_grid = parameter(None)
     #model_param_grid = BaseParameter(dict(max_depth=range(2, 23, 2), criterion=['gini', 'entropy'],
     #                                  min_samples_split=range(2, 20, 1)))
-    target = opattr(None, help_msg='String column name of the target df column')
-    features = opattr(None, help_msg='List of string column names of the feature columns'
+    target = parameter(None, help_msg='String column name of the target df column')
+    features = parameter(None, help_msg='List of string column names of the feature columns'
                                             'If None, all columns minus target are used')
-    n_jobs = opattr(8, help_msg='Number of processes to use with Joblib in sklearn GridSearch')
-    resample = opattr(True, help_msg="Whether to use imblearn's random rebalancing")
-    train_mode = opattr(True, help_msg="Set False to use what model???")
+    n_jobs = parameter(8, help_msg='Number of processes to use with Joblib in sklearn GridSearch')
+    resample = parameter(True, help_msg="Whether to use imblearn's random rebalancing")
+    train_mode = parameter(True, help_msg="Set False to use what model???")
     scorer_map = dict(
         f1=f1_score,
         accuracy=accuracy_score,
@@ -311,18 +313,18 @@ class BoostedBinaryClassifier(BaseWrangler):
         mathews=matthews_corrcoef,
         roc=roc_auc_score
     )
-    model_name = opattr("binary_classifier_%s" % str(uuid.uuid4()).replace('-', '_'))
+    model_name = parameter("binary_classifier_%s" % str(uuid.uuid4()).replace('-', '_'))
     #model_rt = RepoTreeParameter(None)#UnhashableParameter(None)
-    model_rt = opattr(None)
-    performance_metric = opattr('f1',
-                                       help_msg="One of {"  + ", ".join(sorted(scorer_map.keys())) + "}")
+    model_rt = parameter(None)
+    performance_metric = parameter('f1',
+                                   help_msg="One of {"  + ", ".join(sorted(scorer_map.keys())) + "}")
                                        #help_msg="One of {'f1', 'accuracy', 'precision', 'recall', 'mathews'}")
-    performance_metric_kwargs = opattr(dict(average='binary'),
-                                               help_msg="performance metric kwargs")
-    comp_key = opattr(None, help_msg="Set the key/index for output scores and other metrics")
-    scoring_model_name = opattr(None)
-    score_series_name = opattr('proba')
-    return_model = opattr(False, help_msg="Return the model rather than results")
+    performance_metric_kwargs = parameter(dict(average='binary'),
+                                          help_msg="performance metric kwargs")
+    comp_key = parameter(None, help_msg="Set the key/index for output scores and other metrics")
+    scoring_model_name = parameter(None)
+    score_series_name = parameter('proba')
+    return_model = parameter(False, help_msg="Return the model rather than results")
 
     def _node_color(self):
         return '#fc6220'
@@ -492,6 +494,7 @@ class BoostedBinaryClassifier(BaseWrangler):
         cv_res = cv.fit(X, y)
         return cv_res
 
+@opvertex
 class BaseBinaryClassifierModel(BaseWrangler):
     baseline_models = [(DecisionTreeClassifier, dict()),
                        (RandomForestClassifier,dict()),
@@ -813,16 +816,16 @@ class BaseBinaryClassifierModel(BaseWrangler):
 
         return model_res, perf_res
 
-
+@opvertex
 class DecisionTreeModel(BaseBinaryClassifierModel):
         param_search_models =[
         (DecisionTreeClassifier, dict(max_depth=range(2, 23, 2), criterion=['gini', 'entropy'],
                                       min_samples_split=range(2, 20, 1)))]
 
 @opvertex
-class FeatureImportances(OpVertex):
-    series_name = opattr(None)
-    features = opattr(None)
+class FeatureImportances:
+    series_name = parameter(None)
+    features = parameter(None)
     def run(self, model_res):
         if isinstance(model_res, tuple) and len(model_res) == 3:
             m, perf, preds = model_res
@@ -837,8 +840,8 @@ class FeatureImportances(OpVertex):
                                              name=self.get_name() if self.series_name is None else self.series_name)
         return self.feature_importances
 
-
-class BootstrapFeatureImportances(OpVertex):
+@opvertex
+class BootstrapFeatureImportances:
 
     model = BaseParameter(None)
     target = BaseParameter(None)
@@ -968,177 +971,9 @@ class BootstrapFeatureImportances(OpVertex):
                                                        features=features, target=target,
                                                        resample_n=resample_n, resample_frac=resample_frac)
 
-class DenoisingAutoEncoder(BaseWrangler):
-    pass
 
-class BaseBinaryClassifierModel_old(BaseWrangler):
-    name = 'base_model'
-    baseline_models = [(DecisionTreeClassifier, dict()),
-                       (RandomForestClassifier,dict()),
-                       (GradientBoostingClassifier, dict())]
-
-    param_search_models =[
-        #(LogisticRegression, dict(penalty=['l1', 'l2'],
-        #                          C=[.75, .9, 1., 1.1])),
-        (DecisionTreeClassifier, dict(max_depth=range(2, 10),
-                                      min_samples_split=range(2, 30, 2))),
-
-        (RandomForestClassifier, dict(n_estimators=[5,  15, 30, 60, 100, 150],
-                                      max_depth=[2, 3, 5, 7, 13],
-                                      min_samples_split=range(2, 20, 3))),
-
-        (GradientBoostingClassifier, dict(learning_rate=[0.085, 0.1, 0.2, ],
-                                          n_estimators=[10, 30, 60, 100, 150],
-                                          max_depth=[2, 3, 5, 7]))  # ,
-        # min_samples_split=range(2, 10))
-    ]
-    depends = dict()
-    target = None
-    features = None
-    test_size = .25
-    resample = True
-    n_jobs = 4
-
-    def __init__(self, **kwargs):
-        super(BaseBinaryClassifierModel, self).__init__(**kwargs)
-
-    def __call__(self, *args, **kwargs):
-        if self.run_type == 'production':
-            return self.score(*args, **kwargs)
-        elif self.run_type == 'training':
-            return self.train(*args, **kwargs)
-
-    def score(self, **kwargs):
-        raise NotImplemented("Score not implemented on %s"
-                            % self.__class__.__name__)
-
-    def train(self, **kwargs):
-        raise NotImplemented("Train not implemented on %s"
-                             % self.__class__.__name__)
-
-    @staticmethod
-    def print_classification_report(y_true, y_pred,
-                                    **kwargs):
-        print(classification_report(y_true, y_pred,
-                                    **kwargs))
-
-    @staticmethod
-    def performance(y_true, y_pred):
-       return dict(
-                accuracy=accuracy_score(y_true, y_pred),
-                f1=f1_score(y_true, y_pred),
-                precision=precision_score(y_true, y_pred),
-                recall=recall_score(y_true, y_pred),
-            )
-
-    @staticmethod
-    def cv_param_search(model, X, y,
-                        param_grid,
-                        scorer=f1_score, verbose=1,
-                        n_jobs=4):
-        cv = GridSearchCV(estimator=model, param_grid=param_grid,
-                          scoring=make_scorer(scorer),
-                          verbose=verbose, n_jobs=n_jobs,
-                          pre_dispatch=n_jobs)
-        cv_res = cv.fit(X, y)
-        return cv_res
-
-    #@classmethod
-    def param_search_on_features_and_test(self, model_df, features, target,
-                                          models_and_grids=None, resample=None,
-                                          test_size=None, n_jobs=None):
-        models_and_grids = (self.param_search_models
-                            if models_and_grids is None else models_and_grids)
-        test_size = test_size if test_size is not None else self.test_size
-        resample = resample if resample is not None else self.resample
-        n_jobs = n_jobs if n_jobs is not None else self.n_jobs
-
-        logger = self.get_logger()
-
-        ####
-        target_s = model_df[target]
-
-        train_df, test_df = train_test_split(model_df,
-                                             stratify=target_s,
-                                             test_size=test_size)
-        train_target_s, test_target_s = train_df[target], test_df[target]
-
-        res_models = dict()
-        model_perf = dict()
-        for m, pgrid in models_and_grids:
-            m_name = m.__name__
-            if resample:
-                resampler = os.RandomOverSampler
-                m = pl.Pipeline([('resampler', resampler()),
-                                 (m_name, m())])
-                tmp_pgrid = {"%s__%s" %(m_name, param) : vals
-                            for param, vals in pgrid.items()}
-            else:
-                tmp_pgrid = pgrid
-
-            logger.info("Grid searching %s" % m_name)
-            res_models[m_name] = self.cv_param_search(model=m,
-                                                     X=train_df[features],
-                                                     y=train_target_s,
-                                                     param_grid=tmp_pgrid,
-                                                     n_jobs=n_jobs)
-
-            preds = res_models[m_name].predict(test_df[features])
-            self.print_classification_report(test_target_s, preds)
-
-            model_perf[m_name] = dict(
-                accuracy=accuracy_score(test_target_s, preds),
-                f1=f1_score(test_target_s, preds),
-                precision=precision_score(test_target_s, preds),
-                recall=recall_score(test_target_s, preds),
-            )
-
-        return res_models, model_perf
-
-    #@classmethod
-    def train_on_features_and_test(self, model_df, features, target,
-                                   models=None, resample=True):
-        """
-
-        :param model_df:
-        :param features:
-        :param target:
-        :param models:
-        :param resample:
-        :return: tuple of dictionaries
-            (model name -> model object, model name -> model performance dict)
-        """
-        models = self.baseline_models if models is None else models
-
-        train_df, test_df = train_test_split(model_df,
-                                             stratify=model_df[target],
-                                             test_size=.25)
-        logger = self.get_logger()
-
-        model_res = dict()
-        perf_res = dict()
-        for m, kwargs in models:
-            m_name = m.__name__
-
-            if resample:
-                resampler = os.RandomOverSampler
-                m = pl.Pipeline([('resampler', resampler()),
-                                          (m_name, m(**kwargs))])
-
-            m = m.fit(train_df[features], train_df[target])
-            y_pred = m.predict(test_df[features])
-            self.print_classification_report(test_df[target],
-                                             y_pred)
-            perf_res[m_name] = self.performance(test_df[target],
-                                                y_pred)
-            logger.info(perf_res)
-
-            model_res[m_name] = m
-
-        return model_res, perf_res
-
-
-class TorchLogit(OpVertex):
+@opvertex
+class TorchLogit:
     target = BaseParameter(help_msg='String column name of the target df column')
     features = BaseParameter(None, help_msg='List of string column names of the feature columns'
                                             'If None, all columns minus target are used')
