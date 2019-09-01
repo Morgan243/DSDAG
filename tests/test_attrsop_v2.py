@@ -48,6 +48,8 @@ class AddOp(object):
                     y=ProvideInt(magic_num=self.magic_num))
 
     def run(self, x, y):
+        logger = self.get_logger()
+        logger.info("Adding %d and %d" % (x, y))
         self.ratio = (x + y)/self.magic_num
 
         return x+y
@@ -86,11 +88,33 @@ class TestAttrsDAG(unittest.TestCase):
         print("--OUTPUT--")
         print(t)
 
+        completions = ret._ipython_key_completions_()
+        self.assertTrue('Foo' in completions)
+
+    def test_dag_op_getter(self):
+        op = AddOp(magic_num=11, name='important_op')
+        dag = op.build()
+        self.assertEqual(op, dag['important_op'])
+
     def test_basic_op(self):
         op = AddOp(100)(5, 5)
         dag = DAG([op])
         res = dag()
         self.assertEqual(res, 10)
+
+    def test_getting_input_ops(self):
+        @opvertex
+        class InputUseAddOp:
+            def run(self, x):
+                #inputs = self.get_input_ops()
+                inputs = self.opk.dag.get_op_input(self)
+                x_op = inputs['x']
+
+                return x_op.ratio
+
+        #t_ratio = InputUseAddOp().build()()
+        t_ratio = InputUseAddOp()(x=AddOp()).build()()
+        self.assertEqual(t_ratio, 2)
 
     def test_lambda_callable(self):
         collect = OpK.from_callable(lambda *args, **kwargs: list(args),
@@ -249,6 +273,36 @@ class TestAttrsDAG(unittest.TestCase):
         res = dag()
         self.assertEqual(Canary.canary, 0)
 
+    def test_clear_cache_per_dag(self):
+        @opvertex
+        class Canary:
+            canary = 0
+
+        @opvertex
+        class CacheTestOpA:
+            def run(self, x):
+                Canary.canary +=1
+                return [x*.5]
+
+        @opvertex
+        class CacheTestOpB:
+            def run(self, x):
+                Canary.canary +=1
+                return x*5
+
+
+        op_a = CacheTestOpA()(10)
+        op_b = CacheTestOpB()(op_a)
+        a_dag = DAG([op_a], write_to_cache=True)
+        b_dag = DAG([op_b], write_to_cache=True)
+
+        a_res = a_dag()
+        b_res = b_dag()
+
+        self.assertTrue(len(DAG._CACHE), 2)
+        a_dag.clear_cache(only_ops_in_dag=True)
+        self.assertTrue(len(DAG._CACHE), 1)
+
     def test_single_op_requires(self):
         @opvertex
         class SingleRequires:
@@ -262,7 +316,6 @@ class TestAttrsDAG(unittest.TestCase):
         res = dag()
 
         self.assertEqual(res, 100)
-
 
     def test_op_parameter_ordering(self):
         @opvertex
@@ -299,7 +352,6 @@ class TestAttrsDAG(unittest.TestCase):
         res = dag()
         self.assertEqual(res, 10)
 
-
     def test_kwarg_unpacking(self):
         @opvertex
         class DictReturner:
@@ -327,3 +379,5 @@ class TestAttrsDAG(unittest.TestCase):
         bar, foo = dag()
         self.assertEqual(bar, "Bar")
         self.assertEqual(foo, "FooBar")
+
+
