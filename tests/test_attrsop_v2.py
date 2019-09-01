@@ -230,6 +230,7 @@ class TestAttrsDAG(unittest.TestCase):
         res = dag()
         self.assertEqual(Canary.canary, 0)
 
+        self.assertTrue(isinstance(dag.cache, dict))
         dag.clear_cache()
         self.assertEqual(len(dag.cache), 0)
 
