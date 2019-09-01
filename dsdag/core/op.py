@@ -688,6 +688,14 @@ class OpParent(object):
     def get_name(self):
         return getattr(self, '_name', 'NONAME')
 
+    def get_logger(self, log_level='WARN'):
+        if self.opk.dag is not None:
+            l = self.opk.dag.get_op_logger(self)
+        else:
+            l = logging.getLogger()
+            l.setLevel(log_level)
+        return l
+
     def set_unpack_input(self, op):
         self.opk.ops_to_unpack.add(op)
         return op
