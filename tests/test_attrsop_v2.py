@@ -393,3 +393,25 @@ class TestAttrsDAG(unittest.TestCase):
         dag.viz()
         res = dag()
         dag.plot()
+
+    def test_timings(self):
+        op_a = AddOp()
+        op_b = AddOp()
+
+        dag = DAG([op_a, op_b])
+
+        res = dag()
+
+        times = dag.timings()
+        self.assertEqual(len(times), 2)
+
+
+    def test_browse(self):
+        op_a = AddOp()
+        op_b = AddOp()
+
+        dag = DAG([op_a, op_b])
+
+        res = dag()
+
+        dag.browse()

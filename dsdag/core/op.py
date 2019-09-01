@@ -82,6 +82,15 @@ class OpK(object):
         else:
             return None
 
+    @staticmethod
+    def op_nb_viz(op_out, viz_out=None):
+        import ipywidgets as widgets
+        if viz_out is None:
+            viz_out = widgets.Output()
+
+        viz_out.append_display_data("op_nb_viz not implemented!")
+        return viz_out
+
     def get_requires(self, parent):
         return getattr(parent, self.requires_callable_name, self.requires_callable)
 

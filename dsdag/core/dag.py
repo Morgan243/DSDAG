@@ -670,7 +670,7 @@ class DAG(object):
             if op not in self.outputs:
                 continue
             try:
-                viz_out = op.op_nb_viz(self.outputs[op])
+                viz_out = op.opk.op_nb_viz(self.outputs[op])
             except NotImplementedError:
                 if isinstance(self.outputs[op], pd.DataFrame):
                     from dsdag.op_library.templates.dataframe import FrameBrowseMaixin
@@ -680,7 +680,7 @@ class DAG(object):
                     viz_out = widgets.Output()
                     viz_out.append_display_data("Op %s has no viz method" % op.unique_cls_name)
             tab_child_widgets.append(viz_out)
-            tab_titles.append(op.unique_cls_name)
+            tab_titles.append(self.get_dag_unique_op_name(op))
 
         tab = widgets.Tab(layout=widgets.Layout(width='900px'))
         #tab = widgets.Accordion(layout=widgets.Layout(width='1000px'))
@@ -692,7 +692,7 @@ class DAG(object):
         if show_dag:
             from IPython.display import SVG
             dag_out = widgets.Output(layout=widgets.Layout(width='800px'))
-            dag_out.append_display_data(SVG(self.viz()._repr_svg_()))
+            dag_out.append_display_data(SVG(self.viz(return_dot_object=True)._repr_svg_()))
             #dag_out = SVG(self.viz()._repr_svg_())
             out_widget = widgets.VBox([dag_out, tab])
             out_widget.layout.height = '400px'
