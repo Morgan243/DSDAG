@@ -1,5 +1,6 @@
 from .context import dsdag
 import unittest
+from mock import patch
 
 #from dsdag.core.op import OpVertexAttr, parameter, opvertex
 OpK = dsdag.core.op.OpK
@@ -381,3 +382,14 @@ class TestAttrsDAG(unittest.TestCase):
         self.assertEqual(foo, "FooBar")
 
 
+    @patch("matplotlib.pyplot.show")
+    def test_basic_viz(self, mock_show):
+        mock_show.return_value = None
+        op_a = AddOp()
+        op_b = AddOp()
+
+        dag = DAG([op_a, op_b])
+
+        dag.viz()
+        res = dag()
+        dag.plot()

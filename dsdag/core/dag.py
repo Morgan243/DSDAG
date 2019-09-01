@@ -630,15 +630,15 @@ class DAG(object):
         for m, deps in merged.items():
             n = _get_name(m)
 
-            node_attrs = m._get_viz_attrs()
+            viz_props = m.opk.node_viz_kws
             if color_mapping is not None and n in color_mapping:
-                node_attrs['color'] = color_mapping[n]
+                viz_props['node_color'] = color_mapping[n]
 
             if cache_color is not None and m in self.cache:
-                node_attrs['color'] = cache_color
+                viz_props['node_color'] = cache_color
 
 
-            dot.node(n, **node_attrs)
+            dot.node(n, **viz_props)
 
         for m, deps in merged.items():
             n = _get_name(m)

@@ -32,6 +32,9 @@ def make_param_doc_str(param_name, param_help, wrap_len=80,
     return "\n".join(lines)
 
 
+default_viz_props = dict(node_color='lightblue2',
+                           node_style='filled',
+                           node_shape='oval')
 @attr.s(cmp=False)
 class OpK(object):
     run_callable = attr.ib()
@@ -42,7 +45,9 @@ class OpK(object):
     cacheable = attr.ib(True)
     ops_to_unpack = attr.ib(attr.Factory(set))
     unpack_output = attr.ib(False)
-    downstream = attr.ib(dict())
+    #downstream = attr.ib(dict())
+    downstream = attr.ib(attr.Factory(dict))
+    node_viz_kws = attr.ib(attr.Factory(lambda : copy.deepcopy(default_viz_props)))
 
     closure_map = dict()
 
@@ -321,16 +326,18 @@ class OpParent(object):
 
 def opvertex2(cls, run_method='run', requires_method='requires',
               unpack_run_return=False, ops_to_unpack=None,
-              name=True):
+              name=True, node_viz_kws=None):
     ops_to_unpack = set() if ops_to_unpack is None else ops_to_unpack
+    node_viz_kws = default_viz_props if node_viz_kws is None else node_viz_kws
 
     if isinstance(name, bool) and name:
         cls._name = parameter(cls.__name__, init=True, kw_only=True)
 
     opk_f = lambda self: OpK(getattr(self, run_method),
-                          getattr(self, requires_method, None),
-                          unpack_output=unpack_run_return,
-                          ops_to_unpack=ops_to_unpack)
+                             getattr(self, requires_method, None),
+                             unpack_output=unpack_run_return,
+                             ops_to_unpack=ops_to_unpack,
+                             node_viz_kws=node_viz_kws)
 
     cls.opk = parameter(default=attr.Factory(opk_f, takes_self=True),
                         init=True, kw_only=True)
