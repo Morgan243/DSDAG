@@ -1,5 +1,5 @@
 import pandas as pd
-from dsdag.core.op import opvertex2 as opvertex
+from dsdag.core.op import opvertex as opvertex
 from dsdag.core.op import parameter as parameter
 
 @opvertex

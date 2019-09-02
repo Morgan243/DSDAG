@@ -1,5 +1,5 @@
 import uuid
-from dsdag.core.op import opvertex2 as opvertex
+from dsdag.core.op import opvertex as opvertex
 from dsdag.core.op import parameter
 
 from dsdag.core.parameter import BaseParameter, DatetimeParameter, UnhashableParameter, RepoTreeParameter

@@ -1,7 +1,7 @@
 import string
 from string import Formatter
 #from dsdag.core.op import OpVertex, OpMeta
-from dsdag.core.op import opvertex2 as opvertex
+from dsdag.core.op import opvertex as opvertex
 from dsdag.core.op import parameter, OpParent
 
 def highlight_sql(q):

@@ -343,7 +343,6 @@ class DAG(object):
 
         return proc_args, proc_kwargs
 
-
     def dependencies_in_cache(self, process):
         process_name = self.get_dag_unique_op_name(process)
 

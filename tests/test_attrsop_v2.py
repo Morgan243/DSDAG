@@ -8,7 +8,7 @@ OpParent = dsdag.core.op.OpParent
 #OpVertex = dsdag.core.op.OpVertexAttr
 
 #OpVertex = dsdag.core.op.OpVertexAttr
-opvertex = dsdag.core.op.opvertex2
+opvertex = dsdag.core.op.opvertex
 opattr = dsdag.core.op.parameter
 
 #BaseParameter = dsdag.core.parameter.BaseParameter
@@ -17,6 +17,7 @@ df_templates = dsdag.ext.dataframe
 DAG = dsdag.core.dag.DAG
 LambdaOp = dsdag.ext.misc.LambdaOp
 VarOp = dsdag.ext.misc.VarOp
+VarOp2 = dsdag.ext.misc.VarOp2
 
 @opvertex
 class Bar:
@@ -408,7 +409,6 @@ class TestAttrsDAG(unittest.TestCase):
         times = dag.timings()
         self.assertEqual(len(times), 2)
 
-
     def test_browse(self):
         op_a = AddOp()
         op_b = AddOp()
@@ -436,15 +436,40 @@ class TestAttrsDAG(unittest.TestCase):
         x_df = pd.DataFrame(dict(a=np.arange(100)*2,
                                  b=np.arange(100, 200)*3.))
 
+        #####
         cc_op = dsdag.ext.pd.concat()
         cc_ap_op = cc_op([t_df, x_df])
         cc_dag = cc_ap_op.build()
 
         cc_res = cc_dag()
 
+        #####
         mg_op = dsdag.ext.pd.merge()
         mg_ap_op = mg_op(t_df, x_df)
         mg_dag = mg_ap_op.build()
 
         mg_res = mg_dag()
 
+        #####
+        #jn_op = dsdag.ext.pd.join()
+
+    def test_var_op_obj_method(self):
+        import pandas as pd
+        import numpy as np
+        t_df = pd.DataFrame(dict(a=np.arange(100),
+                                 b=np.arange(100, 200)))
+        x_df = pd.DataFrame(dict(a=np.arange(100) * 2,
+                                 b=np.arange(100, 200) * 3.))
+
+        var_op_a = VarOp2(obj=t_df)
+
+        var_op_a.join
+        #self.assertEqual(var_op_a().join().opk.run_callable,
+        #                 t_df.join)
+
+    def test_map(self):
+
+        op_a = Foo()
+        mapped = op_a.map(['bar', 'x', 'y'])
+        dag = DAG(mapped)
+        res = dag()

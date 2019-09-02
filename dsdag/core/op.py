@@ -39,6 +39,9 @@ default_viz_props = dict(node_color='lightblue2',
 class OpK(object):
     run_callable = attr.ib()
     requires_callable = attr.ib()
+    parameters = attr.ib(None)
+    parent_cls = attr.ib(None)
+
     name = attr.ib('NONAME')
 
     dag = attr.ib(None)
@@ -48,7 +51,7 @@ class OpK(object):
     unpack_output = attr.ib(False)
     #downstream = attr.ib(dict())
     downstream = attr.ib(attr.Factory(dict))
-    node_viz_kws = attr.ib(attr.Factory(lambda : copy.deepcopy(default_viz_props)))
+    node_viz_kws = attr.ib(attr.Factory(lambda: copy.deepcopy(default_viz_props)))
 
     closure_map = dict()
 
@@ -121,8 +124,8 @@ class OpK(object):
             req_hash = hash(tuple(req_ret))
 
         for r in req_ret:
-            if hasattr(r, 'downstream'):
-                self.set_downstream(**r.downstream)
+            if hasattr(r, 'opk') and isinstance(r.opk, OpK):
+                self.set_downstream(**r.opk.downstream)
 
         if req_hash not in self.__class__.closure_map:
             #def closure(*args, **kwargs):
@@ -165,6 +168,7 @@ class OpK(object):
             self.req_hashable = hash_of_requires
 
     def __hash__(self):
+
         self._op_hash = hash((type(self),
                               #self.param_hashable,
                               self.req_hashable))
@@ -249,7 +253,7 @@ class OpK(object):
         #_op.run = types.MethodType(_run, _op)
         #_op.opk = OpK(_run, None)
         # make_class already initializes
-        _op = opvertex2(_op, name=False)
+        _op = opvertex(_op, name=True)
 
         return _op
 
@@ -272,11 +276,33 @@ class OpParent(object):
         parameters_ = {f.name: getattr(self, f.name) for f in fields}
         # Filter out OpK
         parameters_ = {k: o for k, o in parameters_.items()
-                           if not isinstance(o, OpK) }
-        param_hashable = tuple([(k, v if isinstance(v, collections.Hashable) else str(uuid4()))
-                                    for k, v in parameters_.items()])
+                           if not isinstance(o, OpK)}
+
+        param_hashable = list()
+        uuids = getattr(self, 'uuids', dict())
+
+        import hashlib
+        for pname, p in parameters_.items():
+            if isinstance(p, (pd.Series, pd.DataFrame)):
+                h = hashlib.sha256(pd.util.hash_pandas_object(p, index=True).values).hexdigest()
+            elif isinstance(p, collections.Hashable):
+                h = hash(p)
+            else:
+                h = uuids.get(pname, uuid4())
+                uuids[pname] = h
+
+            param_hashable.append((pname, h))
+
+
+        param_hashable = tuple(param_hashable)
+        self.uuids = uuids
+
+        #param_hashable = tuple([(k, v if isinstance(v, collections.Hashable) else str(uuid4()))
+                                    #for k, v in parameters_.items()])
 
         return hash((self.opk, param_hashable))
+        #h = hash(self.opk)
+        #return h
 
     def __eq__(self, other):
         return hash(self) == hash(other)
@@ -285,8 +311,11 @@ class OpParent(object):
         self.opk._set_dag(dag)
 
     def get_name(self):
+        #return getattr(self, '_name', self.opk.name)
+        return self.opk.name
 
-        return getattr(self, '_name', self.opk.name)
+    def set_name(self, name):
+        self.opk.name = name
 
     def get_logger(self, log_level='WARN'):
         if self.opk.dag is not None:
@@ -307,6 +336,25 @@ class OpParent(object):
 
     def requires(self):
         return dict()
+
+    def set_downstream(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+            self.opk.downstream[k] = v
+
+        return self
+
+    def map(self, ops, suffix='map'):
+        #return [copy(self)(o) for o in ops]
+        return [self.new(name='%s__%s%d' %(self.get_name(), suffix,  i))(o)
+                for i, o in enumerate(ops)]
+
+    def new(self, name=None):
+        from copy import copy, deepcopy
+        c = deepcopy(self)
+        c.set_name(name=name)
+        return c
+
 
     def build(self,
               read_from_cache=False,
@@ -330,27 +378,31 @@ class OpParent(object):
                    logger=logger)
 
 
-def opvertex2(cls, run_method='run', requires_method='requires',
-              unpack_run_return=False, ops_to_unpack=None,
-              name=True, node_viz_kws=None, extra_attrs=None):
+def opvertex(cls, run_method='run', requires_method='requires',
+             unpack_run_return=False, ops_to_unpack=None,
+             name=True, node_viz_kws=None, extra_attrs=None):
     ops_to_unpack = set() if ops_to_unpack is None else ops_to_unpack
     node_viz_kws = default_viz_props if node_viz_kws is None else node_viz_kws
     extra_attrs = dict() if extra_attrs is None else extra_attrs
 
     if isinstance(name, bool) and name:
-        cls._name = parameter(cls.__name__, init=True, kw_only=True)
+        cls.name = parameter(cls.__name__, init=True, kw_only=True)
 
     opk_f = lambda self: OpK(getattr(self, run_method),
                              getattr(self, requires_method, None),
                              unpack_output=unpack_run_return,
                              ops_to_unpack=ops_to_unpack,
                              node_viz_kws=node_viz_kws,
-                             name=cls.__name__)
+                             parent_cls=cls,
+                             parameters=attr.fields(cls),
+                             # If the OpParent has a name Set, take that
+                             name=getattr(self, 'name', cls.__name__))
 
     cls.opk = parameter(default=attr.Factory(opk_f, takes_self=True),
                         init=True, kw_only=True)
     attr_cls = attr.s(cls,
-                      cmp=False, these=None)
+                      cmp=False,
+                      these=None)
 
     if not issubclass(cls, OpParent):
         attr_cls = attr.make_class(cls.__name__,

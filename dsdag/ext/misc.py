@@ -2,7 +2,7 @@
 #from dsdag.core.op import OpVertexAttr as OpVertex
 #from dsdag.core.parameter import BaseParameter, UnhashableParameter
 from dsdag.core.op import parameter, OpK
-from dsdag.core.op import opvertex2 as opvertex
+from dsdag.core.op import opvertex as opvertex
 from uuid import uuid4
 import dsdag
 
@@ -34,6 +34,11 @@ class VarOp:
     def run(self):
         return self.obj
 
+def isbound(m):
+    return hasattr(m, '__self__')
+
+def instance(bounded_method):
+    return bounded_method.__self__
 
 @opvertex
 class VarOp2:
@@ -55,6 +60,16 @@ class VarOp2:
 
     def requires(self):
         return dict()
+
+    def __getattr__(self, item):
+        if not hasattr(self.obj, item):
+            raise AttributeError("no %s known" % item)
+
+        t_attr = getattr(self.obj, item)
+        ## Check that it's a method of obj
+        if callable(t_attr) and isbound(t_attr):
+            TAttrOp = OpK.from_callable(t_attr)
+            return TAttrOp
 
     def run(self):
         return self.obj

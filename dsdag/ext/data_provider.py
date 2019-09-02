@@ -1,6 +1,6 @@
 #from dsdag.core.op import OpVertex
 from dsdag.core.parameter import BaseParameter, RepoTreeParameter
-from dsdag.core.op import opvertex2 as opvertex
+from dsdag.core.op import opvertex as opvertex
 
 @opvertex
 class Passthrough:

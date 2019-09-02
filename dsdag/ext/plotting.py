@@ -2,7 +2,7 @@ import matplotlib
 from matplotlib import pyplot as plt
 #from dsdag.core.parameter import BaseParameter
 #from dsdag.core.op import OpVertex
-from dsdag.core.op import opvertex2 as opvertex
+from dsdag.core.op import opvertex as opvertex
 from dsdag.core.op import parameter as parameter
 import numpy as np
 
