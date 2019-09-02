@@ -3,6 +3,7 @@
 #from dsdag.core.parameter import BaseParameter, UnhashableParameter
 from dsdag.core.op import parameter, OpK
 from dsdag.core.op import opvertex2 as opvertex
+from uuid import uuid4
 import dsdag
 
 
@@ -39,7 +40,11 @@ class VarOp2:
     obj = parameter(help_msg="The object to wrap and return")
 
     def __hash__(self):
-        h = hash(self.obj)
+        try:
+            h = hash(self.obj)
+        except TypeError:
+            self.hash_id = getattr(self, 'hash_id', hash(str(uuid4())))
+            h = self.hash_id
         return h
 
     def _node_color(self):

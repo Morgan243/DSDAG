@@ -4,6 +4,7 @@ from mock import patch
 
 #from dsdag.core.op import OpVertexAttr, parameter, opvertex
 OpK = dsdag.core.op.OpK
+OpParent = dsdag.core.op.OpParent
 #OpVertex = dsdag.core.op.OpVertexAttr
 
 #OpVertex = dsdag.core.op.OpVertexAttr
@@ -18,7 +19,7 @@ LambdaOp = dsdag.ext.misc.LambdaOp
 VarOp = dsdag.ext.misc.VarOp
 
 @opvertex
-class Bar(object):
+class Bar:
     def requires(self):
         return dict()
 
@@ -26,7 +27,7 @@ class Bar(object):
         return "Bar"
 
 @opvertex
-class Foo(object):
+class Foo:
     def requires(self):
         return dict(bar=Bar())
 
@@ -34,14 +35,14 @@ class Foo(object):
         return "Foo" + bar
 
 @opvertex
-class ProvideInt(object):
+class ProvideInt:
     magic_num = opattr(default=42)
 
     def run(self):
         return self.magic_num
 
 @opvertex
-class AddOp(object):
+class AddOp:
     magic_num = opattr(default=42)
 
     def requires(self):
@@ -426,3 +427,24 @@ class TestAttrsDAG(unittest.TestCase):
 
         op_a = AddOp()
         logger = op_a.get_logger()
+
+    def test_pandas_basic(self):
+        import pandas as pd
+        import numpy as np
+        t_df = pd.DataFrame(dict(a=np.arange(100),
+                                 b=np.arange(100, 200)))
+        x_df = pd.DataFrame(dict(a=np.arange(100)*2,
+                                 b=np.arange(100, 200)*3.))
+
+        cc_op = dsdag.ext.pd.concat()
+        cc_ap_op = cc_op([t_df, x_df])
+        cc_dag = cc_ap_op.build()
+
+        cc_res = cc_dag()
+
+        mg_op = dsdag.ext.pd.merge()
+        mg_ap_op = mg_op(t_df, x_df)
+        mg_dag = mg_ap_op.build()
+
+        mg_res = mg_dag()
+

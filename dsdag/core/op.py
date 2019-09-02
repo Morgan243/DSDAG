@@ -39,6 +39,7 @@ default_viz_props = dict(node_color='lightblue2',
 class OpK(object):
     run_callable = attr.ib()
     requires_callable = attr.ib()
+    name = attr.ib('NONAME')
 
     dag = attr.ib(None)
     never_cache = attr.ib(False)
@@ -102,23 +103,22 @@ class OpK(object):
         from dsdag.ext.misc import VarOp2 as VarOp
         if len(kwargs) == 0 and len(args) == 0:
             return self
-        elif len(kwargs) != 0:
+        elif len(kwargs) > 0 and len(args) > 0:
+            msg = "Mix of *args and **kwargs not supported (yet?)"
+            raise ValueError(msg)
+        if len(kwargs) != 0:
             # var and input are basically the same?
             auto_op = lambda _obj: VarOp(obj=_obj) #if not isinstance(_obj, collections.Hashable) else InputOp(obj=_obj)
-            req_ret = kwargs
-            req_hash = hash(tuple((k, v if OpK.is_op(v) else auto_op(v))
-                        for k, v in kwargs.items()))
-        elif len(args) != 0:
+            req_ret = {k:(v if OpK.is_op(v) else auto_op(v))
+                        for k, v in kwargs.items()}
+            req_hash = hash(tuple(k, v) for k, v in req_ret.items())
+        if len(args) != 0:
             # var and input are basically the same?
             auto_op = lambda _obj: VarOp(obj=_obj) #if not isinstance(_obj, collections.Hashable) else InputOp(obj=_obj)
             req_ret = list(args)
             req_ret = [a if OpK.is_op(a) else auto_op(a)
                        for a in req_ret]
             req_hash = hash(tuple(req_ret))
-
-        else:
-            msg = "Mix of *args and **kwargs not supported (yet?)"
-            raise ValueError(msg)
 
         for r in req_ret:
             if hasattr(r, 'downstream'):
@@ -177,9 +177,9 @@ class OpK(object):
             raise ValueError(msg)
         self.dag = dag
 
-    def get_name(self):
+    #def get_name(self):
         #return self._name if self._name is not None else self.unique_cls_name
-        return self._name if self._name is not None else self.__class__.__name__
+        #return self._name if self._name is not None else self.__class__.__name__
 
     @staticmethod
     def from_callable(callable,
@@ -215,18 +215,21 @@ class OpK(object):
         _attrs = dict()
         if sig is not None:
             for p_name, p in sig.parameters.items():
-                _attr = attr.ib(default=p.default, init=True,
-                                kw_only=p.kind == p.KEYWORD_ONLY)
-                _attrs[p_name] = _attr
+                _attrs[p_name] = parameter(default=p.default, init=True,
+                                  kw_only=p.kind == p.KEYWORD_ONLY)
 
-        _op = attr.make_class(callable_name, _attrs,
-                              bases=(object,), #(OpParent,),
-                              cmp=False)
+        #_op = attr.make_class(callable_name, _attrs,
+        #                      bases=(OpParent,), #(OpParent,),
+        #                      cmp=False)
+        #_attrs['_name'] = parameter(callable_name, init=True, kw_only=True)
+
+        _op = type(callable_name, (object,), _attrs)
 
         if sig is not None:
-            pos_inputs = [ia for ia in input_arguments if isinstance(ia, int)]
             #kw_inputs = [ia for ia in input_arguments if ia not in pos_inputs]
             def _run(s, *args, **kwargs):
+                #pos_inputs = [ia for ia in (input_arguments) if isinstance(ia, int)]
+                pos_inputs = range(len(list(args)))
                 _kwargs = {k: kwargs.get(k, getattr(s, k))
                            for i, (k, v) in enumerate(sig.parameters.items())
                             if i not in pos_inputs}
@@ -242,9 +245,11 @@ class OpK(object):
         else:
             def _run(s, *_args, **_kwargs): return callable(*_args, **_kwargs)
 
-        _op.run = types.MethodType(_run, _op)
+        _op.run = _run
+        #_op.run = types.MethodType(_run, _op)
         #_op.opk = OpK(_run, None)
-        _op = opvertex2(_op, name=True)
+        # make_class already initializes
+        _op = opvertex2(_op, name=False)
 
         return _op
 
@@ -280,7 +285,8 @@ class OpParent(object):
         self.opk._set_dag(dag)
 
     def get_name(self):
-        return getattr(self, '_name', 'NONAME')
+
+        return getattr(self, '_name', self.opk.name)
 
     def get_logger(self, log_level='WARN'):
         if self.opk.dag is not None:
@@ -326,9 +332,10 @@ class OpParent(object):
 
 def opvertex2(cls, run_method='run', requires_method='requires',
               unpack_run_return=False, ops_to_unpack=None,
-              name=True, node_viz_kws=None):
+              name=True, node_viz_kws=None, extra_attrs=None):
     ops_to_unpack = set() if ops_to_unpack is None else ops_to_unpack
     node_viz_kws = default_viz_props if node_viz_kws is None else node_viz_kws
+    extra_attrs = dict() if extra_attrs is None else extra_attrs
 
     if isinstance(name, bool) and name:
         cls._name = parameter(cls.__name__, init=True, kw_only=True)
@@ -337,11 +344,13 @@ def opvertex2(cls, run_method='run', requires_method='requires',
                              getattr(self, requires_method, None),
                              unpack_output=unpack_run_return,
                              ops_to_unpack=ops_to_unpack,
-                             node_viz_kws=node_viz_kws)
+                             node_viz_kws=node_viz_kws,
+                             name=cls.__name__)
 
     cls.opk = parameter(default=attr.Factory(opk_f, takes_self=True),
                         init=True, kw_only=True)
-    attr_cls = attr.s(cls, cmp=False, these=None)
+    attr_cls = attr.s(cls,
+                      cmp=False, these=None)
 
     if not issubclass(cls, OpParent):
         attr_cls = attr.make_class(cls.__name__,
