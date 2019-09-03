@@ -1,5 +1,7 @@
 # DSDAG - The Data Science DAG ![DAG](https://i.stack.imgur.com/bfnEB.png)
+
 **This is a work in progress**
+
 ![Build Status](https://travis-ci.com/Morgan243/DSDAG.svg?token=AKmRHsSyxe3XyR58fo7N&branch=attrsdev)
 ### Goals
 - Capture data processing knowledge in a way that's self-documenting and reusable
