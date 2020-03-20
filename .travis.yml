@@ -16,7 +16,7 @@ install:
   - pip install coveralls
   - pip install toposort imblearn sklearn pandas numpy
   - pip install pydot graphviz dask matplotlib tqdm psutil
-  - pip install attrs ipywidgets
+  - pip install attrs ipywidgets jinja2
   - pip install git+https://github.com/Morgan243/InteractiveDataTree.git
   - pip install git+https://github.com/Morgan243/DSDAG.git
 
