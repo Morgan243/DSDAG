@@ -2,7 +2,8 @@
 
 **This is a work in progress**
 
-![Build Status](https://travis-ci.com/Morgan243/DSDAG.svg?token=AKmRHsSyxe3XyR58fo7N&branch=attrsdev)
+[![Build Status](https://travis-ci.com/Morgan243/DSDAG.svg&branch=attrsdev)](https://travis-ci.org/github/Morgan243/DSDAG)
+
 ### Goals
 - Capture data processing knowledge in a way that's self-documenting and reusable
 - Reduce the time to implement complex analysis by reusing related prior work
