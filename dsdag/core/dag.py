@@ -273,14 +273,23 @@ class DAG(object):
 
         self._record_utilization()
         start_t = time.time()
-        if proc_exec_kwargs is None and proc_args is None:
-            self.outputs[process] = p.run()
-        elif proc_exec_kwargs is not None and proc_args is None:
-            self.outputs[process] = p.run(**proc_exec_kwargs)
-        elif proc_exec_kwargs is None and proc_args is not None:
-            self.outputs[process] = p.run(*proc_args)
-        elif proc_exec_kwargs is not None and proc_args is not None:
-            self.outputs[process] = p.run(*proc_args, **proc_exec_kwargs)
+        try:
+            if proc_exec_kwargs is None and proc_args is None:
+                self.outputs[process] = p.run()
+            elif proc_exec_kwargs is not None and proc_args is None:
+                self.outputs[process] = p.run(**proc_exec_kwargs)
+            elif proc_exec_kwargs is None and proc_args is not None:
+                self.outputs[process] = p.run(*proc_args)
+            elif proc_exec_kwargs is not None and proc_args is not None:
+                self.outputs[process] = p.run(*proc_args, **proc_exec_kwargs)
+        except:
+            print("Unable to run %s" % p)
+            print("-"*10 + "ARGS" + "-"*10)
+            print("\n".join(str(a) for a in proc_args))
+            print("-"*10 + "KWARGS" + "-"*10)
+            print("\n".join(str(k)+"="+str(v)
+                            for k, v in proc_exec_kwargs.items()))
+            raise
 
         finish_t = time.time()
         self._record_utilization()
@@ -672,7 +681,7 @@ class DAG(object):
                 viz_out = op.opk.op_nb_viz(self.outputs[op])
             except NotImplementedError:
                 if isinstance(self.outputs[op], pd.DataFrame):
-                    from dsdag.op_library.templates.dataframe import FrameBrowseMaixin
+                    from dsdag.ext.dataframe import FrameBrowseMaixin
                     #viz_out = FrameBrowseMixin.op_nb_viz(self.outputs[op])
                     viz_out = FrameBrowseMaixin.build_df_browse_widget(self.outputs[op])
                 else:
