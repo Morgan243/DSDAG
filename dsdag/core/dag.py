@@ -726,7 +726,8 @@ class DAG(object):
         sys_s.index = pd.to_datetime(sys_s.index, unit='s')
         sys_s = sys_s / (1024. ** 2)
 
-        height = 0.20 * len(self.start_and_finish_times.keys())
+        height = max(0.30 * len(self.start_and_finish_times.keys()),
+                     3)
         fig, ax = plt.subplots(figsize=(16, height))
         # gd.configure_imports(matplotlib_style='default')
 
