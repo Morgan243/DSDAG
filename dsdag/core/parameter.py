@@ -13,7 +13,8 @@ def parameter(default=attr.NOTHING, validator=None,
               kw_only=False, help_msg=None):
     return attr.ib(default=default, validator=validator,
                    repr=True, cmp=True, hash=None,
-                   init=init, convert=None, metadata=metadata, type=type, converter=converter,
+                   init=init, metadata=metadata, type=type,
+                   converter=converter,
                    factory=factory, kw_only=kw_only)
 
 ### OLD
