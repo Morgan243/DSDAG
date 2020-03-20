@@ -2,7 +2,7 @@
 
 **This is a work in progress**
 
-[![Build Status](https://travis-ci.com/Morgan243/DSDAG.svg&branch=attrsdev)](https://travis-ci.org/github/Morgan243/DSDAG)
+[![Build Status](https://api.travis-ci.org/Morgan243/DSDAG.svg?branch=attrsdev)](https://travis-ci.org/github/Morgan243/DSDAG)
 
 ### Goals
 - Capture data processing knowledge in a way that's self-documenting and reusable
