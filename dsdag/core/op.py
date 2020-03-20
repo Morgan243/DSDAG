@@ -310,6 +310,14 @@ class OpParent(object):
     def _set_dag(self, dag):
         self.opk._set_dag(dag)
 
+    def __rshift__(self, shift):
+        if isinstance(shift, OpParent):
+            return shift(self)
+        elif hasattr(shift, 'opk'):
+            return shift.opk.apply(self)
+        else:
+            raise ValueError("Unknown shift apply for %s" % str(type(shift)))
+
     def get_name(self):
         #return getattr(self, '_name', self.opk.name)
         return self.opk.name
