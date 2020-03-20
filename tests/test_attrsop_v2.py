@@ -137,9 +137,9 @@ class TestAttrsDAG(unittest.TestCase):
         self.assertEqual(len(t_d.all_ops), 6)
 
     def test_op_naming(self):
-        add_op11 = AddOp(magic_num=11, name='Magic_11_AddOpp')
-        add_op3 = AddOp(magic_num=3, name='Magic_3_AddOpp')
-        add_op4 = AddOp(magic_num=5, name='Magic_3_AddOpp')
+        add_op11 = AddOp(magic_num=11, name='Magic_11_AddOpp')(0, 0)
+        add_op3 = AddOp(magic_num=3, name='Magic_3_AddOpp')(0, 0)
+        add_op4 = AddOp(magic_num=5, name='Magic_3_AddOpp')(0, 0)
 
         add_op = AddOp(name='Agg')(x=add_op11, y=add_op3)
 
@@ -473,3 +473,14 @@ class TestAttrsDAG(unittest.TestCase):
         mapped = op_a.map(['bar', 'x', 'y'])
         dag = DAG(mapped)
         res = dag()
+
+    def test_shift_apply(self):
+        add_op11 = AddOp(magic_num=11, name='Magic_11_AddOpp')
+        add_op3 = AddOp(magic_num=3, name='Magic_3_AddOpp')
+        add_op5 = AddOp(magic_num=5, name='Magic_3_AddOpp')
+
+        add_op = AddOp(name='Agg')(x=add_op11, y=add_op3)
+
+        dag = add_op.build()
+
+
