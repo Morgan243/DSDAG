@@ -63,6 +63,7 @@ class HistMulti:
         else:
             return ax
 
+from scipy.interpolate import griddata
 
 @opvertex
 class ContourPlot:
@@ -82,46 +83,44 @@ class ContourPlot:
                      cmap=plt.cm.hsv,
                      vmin=None, vmax=None,
                      alpha=1.,
-                     ax=None, cbar=False, title=''):
+                     ax=None, cbar=False, title='',
+                     figsize=(6, 4)):
 
-        from matplotlib.mlab import griddata
         if ax is None:
-            fig, ax = plt.subplots()
+            fig, ax = plt.subplots(figsize=figsize)
 
-        x = _s_df['x']
-        y = _s_df['y']
-        z = _s_df[value_column]
+        points = _s_df[['x', 'y']].values
+        values = _s_df[value_column].values
 
-        # define grid.
+        # define 2d grid of existing values
         _s_2d_df = _s_df.dropna().pivot(index='x', columns='y', values=value_column)
-
+        # restack without dropping NaN to get the unique grid
         _s_stacked_df = _s_2d_df.stack(dropna=False).rename(value_column).reset_index()
 
-        # return _s_2d_df
-        xi = _s_2d_df.index.tolist()
-        yi = _s_2d_df.columns.tolist()
-        zi = griddata(x, y, z, xi, yi, interp='linear')
+        xi = _s_stacked_df[['x', 'y']].values
 
-        vmax = abs(zi).max() if vmax is None else vmax
-        vmin = -abs(zi).max() if vmin is None else vmin
+        zi = griddata(points,
+                      values,
+                      xi, method='linear')
+
+        vmax = zi[~np.isnan(zi)].max() if vmax is None else vmax
+        vmin = zi[~np.isnan(zi)].min() if vmin is None else vmin
+        #print((vmin, vmax))
         zi = np.clip(zi, vmin, vmax)
+        zi = zi.reshape(_s_2d_df.shape)
 
-        ctr = ax.contourf(xi, yi, zi, levels,
-                          cmap=cmap, alpha=alpha,
+        ctr = ax.contourf(_s_2d_df.index.values,
+                          _s_2d_df.columns.values,
+                          zi.T, cmap=cmap, alpha=alpha,
+                          levels=levels,
                           vmax=vmax, vmin=vmin)
         if cbar:
-            #plt.colorbar(mappable=ctr)
             plt.colorbar(ctr, ax=ax)
-
-        #plt_s_df = _s_df.sort_values(value_column).tail(5)
-        #ax.scatter(x=plt_s_df['x'], y=plt_s_df['y'],
-        #           cmap='green', s=5, alpha=0.6,
-        #           c=dot_color,
-        #           )
 
         ax.set_title(title)
 
         return ax
+
 
     def run(self, df, ax=None, value_column=None, ):
         value_column = self.value_column if value_column is None else value_column
