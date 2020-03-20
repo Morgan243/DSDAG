@@ -49,7 +49,7 @@ class SQL:
         parse_args = string.Formatter().parse(q)
         q_params = [pa[1] for pa in parse_args
                     if pa[1] is not None]
-        op_params = self.get_parameters()
+        op_params = self.opk.get_parameters()
 
         format_kwargs = {p: op_params[p]
                         if p in op_params and not isinstance(op_params[p], parameter)
@@ -270,14 +270,15 @@ class SQL_Param(SQL, SQL_ParamMixin):
         return q
 
 #############
-
+@opvertex
 class SQL_CountSamples(SQL):
-    q = """select count(*) as n_samples from ({subq}) as sq"""
+    q = parameter("""select count(*) as n_samples from ({subq}) as sq""")
 
     def run(self, subq):
         return self.q.format(subq=subq)
 
 
+@opvertex
 class SQL_RandomSample(SQL):
     q = """select * from ({subq}) as {alias} where random() < {rate} {where_addon}"""
     alias = parameter("sq", help_msg="Alias for sub query")
