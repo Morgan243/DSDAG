@@ -475,12 +475,10 @@ class TestAttrsDAG(unittest.TestCase):
         res = dag()
 
     def test_shift_apply(self):
-        add_op11 = AddOp(magic_num=11, name='Magic_11_AddOpp')
-        add_op3 = AddOp(magic_num=3, name='Magic_3_AddOpp')
-        add_op5 = AddOp(magic_num=5, name='Magic_3_AddOpp')
 
-        add_op = AddOp(name='Agg')(x=add_op11, y=add_op3)
-
-        dag = add_op.build()
-
+        #foo1 = Foo()
+        #foo2 = Foo()
+        foo_dag = (Foo() >> Foo()).build()
+        res = foo_dag()
+        self.assertEqual(res, 'FooFooBar')
 
