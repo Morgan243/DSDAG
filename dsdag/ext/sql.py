@@ -52,7 +52,7 @@ class SQL:
         op_params = self.get_parameters()
 
         format_kwargs = {p: op_params[p]
-                        if p in op_params and not isinstance(op_params[p], BaseParameter)
+                        if p in op_params and not isinstance(op_params[p], parameter)
                             else '{%s}' % p
                         for p in q_params }
 

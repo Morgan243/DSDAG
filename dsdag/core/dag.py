@@ -694,8 +694,8 @@ class DAG(object):
         #tab = widgets.Accordion(layout=widgets.Layout(width='1000px'))
 
         tab.children = tab_child_widgets
-        for i, c in enumerate(tab_child_widgets):
-            tab.set_title(i, tab_titles[i])
+        #for i, c in enumerate(tab_child_widgets):
+        #    tab.set_title(i, tab_titles[i])
 
         if show_dag:
             from IPython.display import SVG
