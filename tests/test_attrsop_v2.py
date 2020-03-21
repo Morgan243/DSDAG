@@ -47,8 +47,8 @@ class AddOp:
     magic_num = opattr(default=42)
 
     def requires(self):
-        return dict(x=ProvideInt(magic_num=self.magic_num),
-                    y=ProvideInt(magic_num=self.magic_num))
+        return dict(x=ProvideInt(magic_num=self.magic_num*2),
+                    y=ProvideInt(magic_num=self.magic_num*2))
 
     def run(self, x, y):
         logger = self.get_logger()
@@ -117,7 +117,7 @@ class TestAttrsDAG(unittest.TestCase):
 
         #t_ratio = InputUseAddOp().build()()
         t_ratio = InputUseAddOp()(x=AddOp()).build()()
-        self.assertEqual(t_ratio, 2)
+        self.assertEqual(t_ratio, 4)
 
     def test_lambda_callable(self):
         collect = OpK.from_callable(lambda *args, **kwargs: list(args),
@@ -136,6 +136,14 @@ class TestAttrsDAG(unittest.TestCase):
         # automatically allowing it to be dedupped - 6 ops rather than 8
         self.assertEqual(len(t_d.all_ops), 6)
 
+    def test_op_kwargs(self):
+        #OpK.closure_map = dict()
+        add_op = AddOp(name='Agg', magic_num=1)(x=0, y=133)
+
+        dag = add_op.build()
+        res = dag()
+        self.assertEqual(res, 133)
+
     def test_op_naming(self):
         add_op11 = AddOp(magic_num=11, name='Magic_11_AddOpp')(0, 0)
         add_op3 = AddOp(magic_num=3, name='Magic_3_AddOpp')(0, 0)
@@ -144,6 +152,9 @@ class TestAttrsDAG(unittest.TestCase):
         add_op = AddOp(name='Agg')(x=add_op11, y=add_op3)
 
         dag = add_op.build()
+        dag.clear_cache()
+        #print(dag.dep_map)
+        #print({str(k)[:25]:list(v.keys()) for k, v in dag.dep_map.items()})
         res = dag()
         print(res)
         self.assertEqual(add_op.get_name(), 'Agg')

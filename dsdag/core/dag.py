@@ -62,10 +62,11 @@ class DAG(object):
             self.cache = DAG._CACHE
         elif cache is not None:
             self.cache = cache
+        elif not self.using_cache:
+            self.cache = None
         else:
             logger.info("Using dict cache")
             self.cache = DAG._CACHE
-
 
         if not isinstance(required_outputs, (list, tuple)):
             self.required_outputs = [required_outputs]
@@ -85,18 +86,20 @@ class DAG(object):
                              % ", ".join(self.lazy_outputs))
             self.required_outputs = list(set(self.required_outputs) - set(self.lazy_outputs))
 
-
         self.pbar = pbar
 
         self.op_name_counts = dict()# Counter(o.get_name() for o in self.all_ops.values())
         self.op_suffixes = dict()
-        self.all_ops, self.dep_map, self.input_op_map = self.build(self.required_outputs)
+        self.all_ops, self.dep_map  = self.build(self.required_outputs)
 
+        #self.runtime_parameters = dict()
+        #for op in self.all_ops:
+        #    for p_name, param in op.opk.runtime_parameters.items():
+        #        self.runtime_parameters[p_name] = param
 
-        self.runtime_parameters = dict()
-        for op in self.all_ops:
-            for p_name, param in op.opk.runtime_parameters.items():
-                self.runtime_parameters[p_name] = param
+        self.runtime_parameters = {p_name: param
+                                   for op in self.all_ops
+                                    for p_name, param in op.opk.runtime_parameters.items()}
 
         self.name_to_op_map = {o.get_name():o for o in self.all_ops.values()}
         for lo in self.lazy_outputs:
@@ -213,9 +216,9 @@ class DAG(object):
             if isinstance(dep_map[o], (list, tuple)):
                 if isinstance(dep_map[o], tuple):
                     dep_map[o] = list(dep_map[o])
-                deps_to_resolve += dep_map[o]
+                new_reqs = dep_map[o]
             elif isinstance(dep_map[o], dict):
-                deps_to_resolve += list(dep_map[o].values())
+                new_reqs = list(dep_map[o].values())
             else:
                 from dsdag.core.op import OpParent
                 t = (OpParent)
@@ -225,41 +228,40 @@ class DAG(object):
                     raise ValueError(msg % (str(o), str(dep_map[o])))
                 # Treat single op returns like a list with only one element
                 dep_map[o] = [dep_map[o]]
-                deps_to_resolve += dep_map[o]
+                new_reqs = dep_map[o]
+
+            deps_to_resolve += new_reqs
 
             # With every new Op, we want to check that this Op isn't
             # already being satisfied.
 
             # Go through all ops that have been processed at this point
-            for o in all_ops.keys():
-                if isinstance(dep_map[o], dict):
+            for ao in all_ops.keys():
+                if isinstance(dep_map[ao], dict):
                     #For this operations dependencies (dict)
-                    for req_k in dep_map[o].keys():
+                    for req_k in dep_map[ao].keys():
                         # If this is already satisified
-                        if dep_map[o][req_k] in all_ops:
+                        if dep_map[ao][req_k] in all_ops:
                             # Take the existing (resolved) op and overwrite
                             # this ops dependency to it # However, the key object is not overwritten - so explicitly delete and update
                             # TODO: Is this still necessary?
-                            _o = all_ops[dep_map[o][req_k]]
+                            _o = all_ops[dep_map[ao][req_k]]
                             del(all_ops[_o])
-                            dep_map[o][req_k] = _o
+                            dep_map[ao][req_k] = _o
                             all_ops[_o] = _o
-                elif isinstance(dep_map[o], list):
+                elif isinstance(dep_map[ao], list):
                     #For this operations dependencies (list)
-                    for i, req_k in enumerate(dep_map[o]):
+                    for i, req_k in enumerate(dep_map[ao]):
                         if req_k in all_ops:
-                            _o = all_ops[dep_map[o][i]]
-                            dep_map[o][i] = _o
+                            _o = all_ops[dep_map[ao][i]]
+                            dep_map[ao][i] = _o
                             del all_ops[_o]
                             all_ops[_o] = _o
                 else:
-                    msg = "Found unsupported Op dependency object %s" % type(o)
+                    msg = "Found unsupported Op dependency object %s" % type(ao)
                     raise ValueError(msg)
 
-        import dsdag
-        input_op_map = {k: o for k, o in all_ops.items()
-                        if isinstance(o, dsdag.ext.misc.InputOp)}
-        return all_ops, dep_map, input_op_map
+        return all_ops, dep_map
 
 
     def exec_process(self, process,
@@ -454,11 +456,6 @@ class DAG(object):
                 dep_values = dependencies.values() if isinstance(dependencies, dict) else dependencies
 
                 tpid = "[%d.%d]" % (i, j)
-                #process_in_cache = ((isinstance(self.cache, dict) and process in self.cache)
-                #                    or
-                #                    (isinstance(self.cache, idt.RepoTree)
-                #                     and process_name in self.cache
-                #                     and hash(process) == self.cache[process_name].md['op_hash']))
                 process_in_cache = self.dependencies_in_cache(process)
                 load_from_cache = (process not in self.required_outputs  # always run specified vertices
                                    # Op is set to cacheable (default)
@@ -473,9 +470,6 @@ class DAG(object):
                                    and process_in_cache
                                    #and (process_name in self.cache or process in self.cache)
                                    )
-                if process in self.input_op_map:
-                    pass
-
                 if load_from_cache:
                     if not self.pbar:
                         self.logger.info("%s Will use cached output of %s"
@@ -542,14 +536,15 @@ class DAG(object):
                         self.logger.debug("Deleting future dep %s" % k.__class__.__name__)
                         del self.outputs[k]
 
-                        in_cache = (k.__class__.__name__ in self.cache or k in self.cache)
-                        if k.opk.cacheable and self.cache_eviction and in_cache:
-                            self.logger.debug("Removing unnecessary op from cache %s"
-                                              % k.__class__.__name__)
-                            if isinstance(self.cache, idt.RepoTree):
-                                self.cache[k.__class__.__name__].delete('dag')
-                            else:
-                                del self.cache[k]
+                        if self.cache is not None:
+                            in_cache = (k.__class__.__name__ in self.cache or k in self.cache)
+                            if k.opk.cacheable and self.cache_eviction and in_cache:
+                                self.logger.debug("Removing unnecessary op from cache %s"
+                                                  % k.__class__.__name__)
+                                if isinstance(self.cache, idt.RepoTree):
+                                    self.cache[k.__class__.__name__].delete('dag')
+                                else:
+                                    del self.cache[k]
 
         if self.pbar:
             self.tqdm_bar.close()

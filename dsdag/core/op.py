@@ -127,18 +127,19 @@ class OpK(object):
             if hasattr(r, 'opk') and isinstance(r.opk, OpK):
                 self.set_downstream(**r.opk.downstream)
 
-        if req_hash not in self.__class__.closure_map:
-            #def closure(*args, **kwargs):
-            #    return req_ret
-            #opk.__class__.closure_map[req_hash] = closure
-            self.__class__.closure_map[req_hash] = lambda *args, **kwargs: req_ret
+        #def closure(*args, **kwargs):
+        #    return req_ret
+        #opk.__class__.closure_map[req_hash] = closure
+        req_f = lambda *args, **kwargs: req_ret
+
+        #if req_hash not in self.__class__.closure_map:
+        #    self.__class__.closure_map[req_hash] = req_f
+        #else:
+        #    print("%s already in closure map" % self.name)
 
         # Use descriptor protocol: https://docs.python.org/2/howto/descriptor.html
-        #self.requires = closure.__get__(self)
-        #self.req_hash = req_hash
-        #opk._req_hashable = req_hash
-        #opk.requires = opk.__class__.closure_map[opk._req_hashable].__get__(opk)
-        self.set_requires(self.__class__.closure_map[req_hash],
+        self.set_requires(req_f,
+        #self.__class__.closure_map[req_hash],
         #opk.__class__.closure_map[req_hash].__get__(opk),
                          hash_of_requires=req_hash,
                          name_of_method='_auto_requires')
@@ -279,7 +280,7 @@ class OpParent(object):
                            if not isinstance(o, OpK)}
 
         param_hashable = list()
-        uuids = getattr(self, 'uuids', dict())
+        uuids = getattr(self.opk, 'uuids', dict())
 
         import hashlib
         for pname, p in parameters_.items():
@@ -295,14 +296,9 @@ class OpParent(object):
 
 
         param_hashable = tuple(param_hashable)
-        self.uuids = uuids
-
-        #param_hashable = tuple([(k, v if isinstance(v, collections.Hashable) else str(uuid4()))
-                                    #for k, v in parameters_.items()])
+        self.opk.uuids = uuids
 
         return hash((self.opk, param_hashable))
-        #h = hash(self.opk)
-        #return h
 
     def __eq__(self, other):
         return hash(self) == hash(other)
@@ -315,6 +311,10 @@ class OpParent(object):
             return shift(self)
         elif hasattr(shift, 'opk'):
             return shift.opk.apply(self)
+        elif isinstance(shift, (tuple, list)):
+            if not all(isinstance(s, OpParent) for s in shift):
+                raise TypeError("All elements in a tuple/list must be derived from OpParent")
+            return [self >> s for s in shift]
         else:
             raise ValueError("Unknown shift apply for %s" % str(type(shift)))
 
