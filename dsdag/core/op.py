@@ -388,7 +388,8 @@ class OpParent(object):
 
 def opvertex(cls, run_method='run', requires_method='requires',
              unpack_run_return=False, ops_to_unpack=None,
-             name=True, node_viz_kws=None, extra_attrs=None):
+             name=True, node_viz_kws=None, extra_attrs=None,
+             auto_subclass=True):
     ops_to_unpack = set() if ops_to_unpack is None else ops_to_unpack
     node_viz_kws = default_viz_props if node_viz_kws is None else node_viz_kws
     extra_attrs = dict() if extra_attrs is None else extra_attrs
@@ -412,14 +413,13 @@ def opvertex(cls, run_method='run', requires_method='requires',
                       cmp=False,
                       these=None)
 
-    if not issubclass(cls, OpParent):
+    if not issubclass(cls, OpParent) and auto_subclass:
         attr_cls = attr.make_class(cls.__name__,
                                    attrs=[],# attrs=attr_cls.__attrs_attrs__
                                    #bases=(OpParent, attr_cls),
                                    bases=(attr_cls, OpParent),
                                    cmp=False,
                                    )
-
 
     return attr_cls
 

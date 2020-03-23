@@ -305,7 +305,7 @@ class DAG(object):
 
     def set_runtime(self, **kwargs):
         for k, v in kwargs.items():
-            self.runtime_parameters[k] = None
+            self.runtime_parameters[k] = v
 
     def collect_op_inputs(self, op):
         dependencies = self.dep_map.get(op, dict())
@@ -354,19 +354,17 @@ class DAG(object):
 
         return proc_args, proc_kwargs
 
-    def dependencies_in_cache(self, process):
+    def op_is_in_cache(self, process):
         process_name = self.get_dag_unique_op_name(process)
-
-        import inspect
-
-        #src_hash = hash(inspect.getsource(process.__class__))
 
         if isinstance(self.cache, dict) and process in self.cache:
             process_in_cache = True
         elif isinstance(self.cache, idt.RepoTree) and process_name in self.cache:
             import hashlib
             m = hashlib.sha256()
-            m.update(str(process).encode('utf-8'))
+            # Hacky, but the process str repr should contain a repr of all parameters
+            # some may be object memory locations? Need better framework for unique id of ops
+            # -> requires unique repr of requires
             #m.update(str(process._req_hashable))
             h = str(m.digest())
 
@@ -386,11 +384,6 @@ class DAG(object):
             process_in_cache = False
 
 
-        #process_in_cache = ((isinstance(self.cache, dict) and process in self.cache)
-        #                    or
-        #                    (isinstance(self.cache, idt.RepoTree)
-        #                     and process_name in self.cache
-        #                     and hash(process) == self.cache[process_name].md['op_hash']))
         return process_in_cache
 
     def find_min_topology(self):#, ops, topology=[]):
@@ -398,7 +391,7 @@ class DAG(object):
         #                             self.using_cache and
         #                             self.cache is not None and
         #                            (dep in self.cache or dep.get_name() in self.cache))
-        #dep_satisfied = self.dependencies_in_cache()
+        #dep_satisfied = self.op_is_in_cache()
 
         dep_map = dict()
         deps_to_resolve = list(self.required_outputs)
@@ -415,7 +408,7 @@ class DAG(object):
             # But only need to resolve those that are not satisfied already
             if self.read_from_cache:
                 deps_to_resolve += [r for r in _iter_reqs
-                                    if not self.dependencies_in_cache(r)]
+                                    if not self.op_is_in_cache(r)]
             else:
                 deps_to_resolve += list(_iter_reqs)
 
@@ -456,7 +449,7 @@ class DAG(object):
                 dep_values = dependencies.values() if isinstance(dependencies, dict) else dependencies
 
                 tpid = "[%d.%d]" % (i, j)
-                process_in_cache = self.dependencies_in_cache(process)
+                process_in_cache = self.op_is_in_cache(process)
                 load_from_cache = (process not in self.required_outputs  # always run specified vertices
                                    # Op is set to cacheable (default)
                                    and getattr(process.opk, 'cacheable', False)
