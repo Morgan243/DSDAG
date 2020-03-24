@@ -363,6 +363,16 @@ class OpParent(object):
         c.set_name(name=name)
         return c
 
+    def unwind(self):
+        deps_to_resolve = [self]
+        while len(deps_to_resolve):
+            dep_op = deps_to_resolve[0]
+            deps_to_resolve = deps_to_resolve[1:]
+            yield dep_op
+
+            reqs = dep_op.opk.get_requires(dep_op)()
+            reqs = list(reqs.values() if isinstance(reqs, dict) else reqs)
+            deps_to_resolve += reqs
 
     def build(self,
               read_from_cache=False,

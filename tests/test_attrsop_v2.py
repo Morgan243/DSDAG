@@ -105,6 +105,18 @@ class TestAttrsDAG(unittest.TestCase):
         res = dag()
         self.assertEqual(res, 10)
 
+    def test_op_unwind(self):
+        op = AddOp(100)(5, 5)
+        g = op.unwind()
+        op_l = list(g)
+        self.assertEqual(len(op_l), 3)
+
+        op2 = AddOp()(AddOp(0), AddOp(10))
+        g2 = op2.unwind()
+        op_l2 = list(g2)
+        self.assertEqual(len(op_l2), 7)
+
+
     def test_getting_input_ops(self):
         @opvertex
         class InputUseAddOp:
