@@ -19,7 +19,7 @@ def highlight_sql(q):
     html = style_html + pygment_html
     return html
 
-@opvertex
+@opvertex(node_color='#d4d656')
 class SQL:
     """
     Provides a 'q' parameter and a highlighted representation for notebook views.
@@ -62,9 +62,6 @@ class SQL:
         q = q.format(**format_kwargs)
 
         return highlight_sql(q)
-
-    def _node_color(self):
-        return '#59ba5e'
 
     def op_nb_viz(self, op_out, viz_out=None):
         from pygments import highlight
