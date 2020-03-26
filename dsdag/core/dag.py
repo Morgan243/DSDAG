@@ -628,11 +628,10 @@ class DAG(object):
 
             viz_props = m.opk.node_viz_kws
             if color_mapping is not None and n in color_mapping:
-                viz_props['node_color'] = color_mapping[n]
+                viz_props['color'] = color_mapping[n]
 
             if cache_color is not None and m in self.cache:
-                viz_props['node_color'] = cache_color
-
+                viz_props['color'] = cache_color
 
             dot.node(n, **viz_props)
 
