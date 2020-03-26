@@ -1,4 +1,5 @@
 import logging
+import numpy as np
 import interactive_data_tree as idt
 import time
 from toposort import toposort
@@ -118,6 +119,7 @@ class DAG(object):
         self.dep_sets = {p:set(d.values()) if isinstance(d, dict) else set(d)
                          for p, d in self.dep_map.items()}
         self.topology = list(toposort(self.dep_sets))
+        self.ops = np.array([np.array(t) for t in self.topology])
 
         self.outputs = dict()
         self.dag_start_time = None
