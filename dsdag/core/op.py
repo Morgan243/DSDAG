@@ -32,9 +32,9 @@ def make_param_doc_str(param_name, param_help, wrap_len=80,
     return "\n".join(lines)
 
 
-default_viz_props = dict(node_color='lightblue2',
-                           node_style='filled',
-                           node_shape='oval')
+default_viz_props = dict(color='lightblue2',
+                         style='filled',
+                         shape='oval')
 @attr.s(cmp=False)
 class OpK(object):
     run_callable = attr.ib()
@@ -315,6 +315,9 @@ class OpParent(object):
             if not all(isinstance(s, OpParent) for s in shift):
                 raise TypeError("All elements in a tuple/list must be derived from OpParent")
             return [self >> s for s in shift]
+        elif callable(shift):
+            from dsdag.ext.misc import LambdaOp
+            return self >> LambdaOp(f=shift, name=shift.__name__)
         else:
             raise ValueError("Unknown shift apply for %s" % str(type(shift)))
 
@@ -386,12 +389,27 @@ class OpParent(object):
                    logger=logger)
 
 
-def opvertex(cls, run_method='run', requires_method='requires',
+def opvertex(cls=None, run_method='run', requires_method='requires',
              unpack_run_return=False, ops_to_unpack=None,
-             name=True, node_viz_kws=None, extra_attrs=None,
+             name=True,
+             node_color='lightblue', node_style='filled', node_shape='oval',
+             #node_viz_kws=None,
+                          extra_attrs=None,
              auto_subclass=True):
+    if cls is None:
+        def _ov(cls=None, run_method=run_method, requires_method=requires_method,
+                unpack_run_return=unpack_run_return, ops_to_unpack=ops_to_unpack,
+                name=name, node_color=node_color, node_style=node_style, node_shape=node_shape,
+                extra_attrs=extra_attrs, auto_subclass=auto_subclass):
+            return opvertex(cls=cls, run_method=run_method, requires_method=requires_method,
+                            unpack_run_return=unpack_run_return, ops_to_unpack=ops_to_unpack,
+                            name=name, node_color=node_color, node_style=node_style, node_shape=node_shape,
+                            extra_attrs=extra_attrs, auto_subclass=auto_subclass)
+        return _ov
+
     ops_to_unpack = set() if ops_to_unpack is None else ops_to_unpack
-    node_viz_kws = default_viz_props if node_viz_kws is None else node_viz_kws
+    #node_viz_kws = default_viz_props if node_viz_kws is None else node_viz_kws
+    node_viz_kws = dict(color=node_color, style=node_style, shape=node_shape)
     extra_attrs = dict() if extra_attrs is None else extra_attrs
 
     if isinstance(name, bool) and name:
