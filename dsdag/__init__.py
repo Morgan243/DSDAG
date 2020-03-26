@@ -5,4 +5,6 @@ DAG = core.dag.DAG
 parameter = core.parameter.parameter
 opvertex = core.op.opvertex
 
+from_callable = core.op.OpK.from_callable
+
 version = '0.0.1'
