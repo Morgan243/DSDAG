@@ -505,3 +505,11 @@ class TestAttrsDAG(unittest.TestCase):
         res = foo_dag()
         self.assertEqual(res, 'FooFooBar')
 
+
+
+        foo_dag = (Foo() >>
+                   [Foo(), Foo()]).build()
+
+        foo_res = foo_dag()
+        print(foo_res)
+        self.assertEqual(foo_res, ['FooFooBar', 'FooFooBar'])

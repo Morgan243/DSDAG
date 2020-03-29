@@ -74,6 +74,12 @@ class OpK(object):
         return obj
 
     @staticmethod
+    def auto_op(obj):
+        from dsdag.ext.misc import VarOp2 as VarOp
+        return obj if OpK.is_op(obj) else VarOp(obj=obj)
+        #auto_op = lambda _obj: VarOp(obj=_obj)  # if not isinstance(_obj, collections.Hashable) else InputOp(obj=_obj)
+
+    @staticmethod
     def is_op(obj):
         return hasattr(obj, 'opk') and isinstance(obj.opk, OpK)
 
@@ -103,44 +109,26 @@ class OpK(object):
         return self
 
     def apply(self, *args, **kwargs):
-        from dsdag.ext.misc import VarOp2 as VarOp
         if len(kwargs) == 0 and len(args) == 0:
             return self
         elif len(kwargs) > 0 and len(args) > 0:
             msg = "Mix of *args and **kwargs not supported (yet?)"
             raise ValueError(msg)
         if len(kwargs) != 0:
-            # var and input are basically the same?
-            auto_op = lambda _obj: VarOp(obj=_obj) #if not isinstance(_obj, collections.Hashable) else InputOp(obj=_obj)
-            req_ret = {k:(v if OpK.is_op(v) else auto_op(v))
-                        for k, v in kwargs.items()}
+            req_ret = {k: OpK.auto_op(v) for k, v in kwargs.items()}
             req_hash = hash(tuple(k, v) for k, v in req_ret.items())
         if len(args) != 0:
-            # var and input are basically the same?
-            auto_op = lambda _obj: VarOp(obj=_obj) #if not isinstance(_obj, collections.Hashable) else InputOp(obj=_obj)
-            req_ret = list(args)
-            req_ret = [a if OpK.is_op(a) else auto_op(a)
-                       for a in req_ret]
+            req_ret = [OpK.auto_op(a) for a in list(args)]
             req_hash = hash(tuple(req_ret))
 
         for r in req_ret:
             if hasattr(r, 'opk') and isinstance(r.opk, OpK):
                 self.set_downstream(**r.opk.downstream)
 
-        #def closure(*args, **kwargs):
-        #    return req_ret
-        #opk.__class__.closure_map[req_hash] = closure
         req_f = lambda *args, **kwargs: req_ret
-
-        #if req_hash not in self.__class__.closure_map:
-        #    self.__class__.closure_map[req_hash] = req_f
-        #else:
-        #    print("%s already in closure map" % self.name)
 
         # Use descriptor protocol: https://docs.python.org/2/howto/descriptor.html
         self.set_requires(req_f,
-        #self.__class__.closure_map[req_hash],
-        #opk.__class__.closure_map[req_hash].__get__(opk),
                          hash_of_requires=req_hash,
                          name_of_method='_auto_requires')
 
@@ -314,7 +302,8 @@ class OpParent(object):
         elif isinstance(shift, (tuple, list)):
             if not all(isinstance(s, OpParent) for s in shift):
                 raise TypeError("All elements in a tuple/list must be derived from OpParent")
-            return [self >> s for s in shift]
+            #return [self >> s for s in shift]
+            return OpCollection([s.new()(self) for s in shift])
         else:
             raise ValueError("Unknown shift apply for %s" % str(type(shift)))
 
@@ -354,13 +343,14 @@ class OpParent(object):
 
     def map(self, ops, suffix='map'):
         #return [copy(self)(o) for o in ops]
-        return [self.new(name='%s__%s%d' %(self.get_name(), suffix,  i))(o)
+        return [self.new(name='%s__%s%d' % (self.get_name(),
+                                            suffix,  i))(o)
                 for i, o in enumerate(ops)]
 
     def new(self, name=None):
         from copy import copy, deepcopy
         c = deepcopy(self)
-        c.set_name(name=name)
+        c.set_name(name=name if name is not None else self.get_name())
         return c
 
     def unwind(self):
@@ -432,5 +422,58 @@ def opvertex(cls, run_method='run', requires_method='requires',
                                    )
 
     return attr_cls
+
+
+@attr.s
+class OpCollection:
+    ops = attr.ib()
+
+    #def apply(self):
+    def __call__(self, *args, **kwargs):
+        self.ops = [o.opk.apply(*args, **kwargs) for o in self.ops]
+        return self
+
+
+    def __rshift__(self, shift):
+        """
+        Many to one
+        :param self:
+        :param shift:
+        :return:
+        """
+        if isinstance(shift, OpParent):
+            return shift(*self.ops)
+            #return OpCollection([shift.new()(o) for o in self.ops])
+
+    def __lshift__(self, shift):
+        """
+        Many to many
+        :param self:
+        :param shift:
+        :return:
+        """
+        if isinstance(shift, OpParent):
+            return OpCollection([shift.new()(o) for o in self.ops])
+
+    def build(self,
+              read_from_cache=False,
+              write_to_cache=False,
+              cache=None,
+              cache_eviction=False,
+              force_downstream_rerun=True,
+              pbar=True,
+              live_browse=False,
+              logger=None):
+
+        from dsdag.core.dag import DAG
+        return DAG(required_outputs=self.ops,
+                   read_from_cache=read_from_cache,
+                   write_to_cache=write_to_cache,
+                   cache=cache,
+                   cache_eviction=cache_eviction,
+                   force_downstream_rerun=force_downstream_rerun,
+                   pbar=pbar,
+                   live_browse=live_browse,
+                   logger=logger)
 
 
