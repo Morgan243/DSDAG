@@ -102,7 +102,9 @@ class DAG(object):
                                    for op in self.all_ops
                                     for p_name, param in op.opk.runtime_parameters.items()}
 
-        self.name_to_op_map = {o.get_name():o for o in self.all_ops.values()}
+        #self.name_to_op_map = {o.get_name():o for o in self.all_ops.values()}
+        self.name_to_op_map = {self.get_dag_unique_op_name(o):o
+                               for o in self.all_ops.values()}
         for lo in self.lazy_outputs:
             if lo not in self.name_to_op_map:
                 self.logger.error("Lazy Op %s is not in resulting build Ops: %s"
@@ -630,11 +632,10 @@ class DAG(object):
 
             viz_props = m.opk.node_viz_kws
             if color_mapping is not None and n in color_mapping:
-                viz_props['node_color'] = color_mapping[n]
+                viz_props['color'] = color_mapping[n]
 
             if cache_color is not None and m in self.cache:
-                viz_props['node_color'] = cache_color
-
+                viz_props['color'] = cache_color
 
             dot.node(n, **viz_props)
 
